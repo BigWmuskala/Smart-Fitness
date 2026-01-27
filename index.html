@@ -3,192 +3,177 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Pro Coach</title>
+    <title>⚡ Smart-Fitness AI ⚡</title>
+
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
-    
+
     <style>
-        :root { --primary: #00ff88; --bg: #121212; --card: #1e1e1e; --text: #ffffff; }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-        .app-container { width: 90%; max-width: 400px; background: var(--card); padding: 30px; border-radius: 25px; shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; }
-        .step { display: none; transition: 0.3s; }
-        .step.active { display: block; }
-        h1 { color: var(--primary); font-size: 24px; }
-        select, input { width: 100%; padding: 12px; margin: 20px 0; border-radius: 10px; border: none; background: #333; color: white; }
-        button { background: var(--primary); color: #000; border: none; padding: 15px 30px; border-radius: 12px; font-weight: bold; cursor: pointer; width: 100%; font-size: 16px; margin-top: 10px; }
-        .progress-bar { height: 5px; background: #333; margin-bottom: 20px; border-radius: 5px; }
-        .progress-fill { height: 100%; background: var(--primary); width: 0%; transition: 0.5s; }
-        #canvas-container { position: relative; width: 100%; border-radius: 20px; overflow: hidden; display: none; }
-        canvas { width: 100%; background: #000; }
-        .stat-badge { background: rgba(0,255,136,0.1); color: var(--primary); padding: 10px; border-radius: 10px; display: inline-block; margin: 5px; font-weight: bold; }
-        #timer { font-size: 48px; color: var(--primary); display: none; }
+        :root { --neon:#00f2ff; --pink:#ff007f; --bg:#0a0a0c; --card:#16161a; }
+        body { font-family: Orbitron, sans-serif; background:var(--bg); color:white; margin:0; }
+        .app-container { min-height:100vh; display:flex; justify-content:center; align-items:center; padding:20px; }
+        .glass-card { background:var(--card); border:2px solid var(--neon); box-shadow:0 0 20px rgba(0,242,255,.3); border-radius:20px; padding:25px; width:100%; max-width:450px; text-align:center; }
+        h1 { color:var(--neon); letter-spacing:3px; text-shadow:0 0 10px var(--neon); }
+
+        .stats-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:20px 0; }
+        .stat-item { background:rgba(255,255,255,.05); padding:15px; border-radius:10px; border-bottom:3px solid var(--neon); }
+        .stat-value { font-size:28px; font-weight:bold; transition:.15s; }
+
+        button {
+            width:100%; margin-top:12px; padding:14px;
+            background:linear-gradient(45deg,var(--neon),#0066ff);
+            color:white; border:none; border-radius:10px;
+            font-weight:bold; cursor:pointer;
+        }
+        button:hover { box-shadow:0 0 15px var(--neon); }
+
+        #video-box { display:none; border:3px solid var(--neon); border-radius:15px; overflow:hidden; }
+        canvas { width:100%; transform:scaleX(-1); }
+
+        .step { display:none; }
+        .step.active { display:block; }
     </style>
 </head>
+
 <body>
-
 <div class="app-container">
-    <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+<div class="glass-card">
 
-    <div class="step active" id="step1">
-        <h1>Vraag 1/5</h1>
-        <p>Hoeveel dagen per week heb je tijd voor oefeningen?</p>
-        <select id="v_dagen"><option value="2">2 dagen</option><option value="4">4 dagen</option><option value="7">Elke dag</option></select>
-        <button onclick="nextStep(2)">Volgende</button>
+<h1>CYBER-PUMP</h1>
+
+<div id="setup">
+    <div class="step active" id="s1">
+        <p>Kies oefening</p>
+        <button onclick="setEx('squat')">SQUATS</button>
+        <button onclick="setEx('pushup')">PUSHUPS</button>
     </div>
-
-    <div class="step" id="step2">
-        <h1>Vraag 2/5</h1>
-        <p>Wat is je hoofddoel?</p>
-        <select id="v_doel"><option value="kracht">Spiermassa</option><option value="conditie">Uithoudingsvermogen</option></select>
-        <button onclick="nextStep(3)">Volgende</button>
-    </div>
-
-    <div class="step" id="step3">
-        <h1>Vraag 3/5</h1>
-        <p>Welke spiergroep wil je versterken?</p>
-        <select id="v_spier"><option value="benen">Benen (Squats)</option><option value="borst">Borst (Push-ups)</option><option value="beide">Beide (Combi-workout)</option></select>
-        <button onclick="nextStep(4)">Volgende</button>
-    </div>
-
-    <div class="step" id="step4">
-        <h1>Vraag 4/5</h1>
-        <p>Hoeveel minuten wil je per sessie trainen?</p>
-        <select id="v_minuten"><option value="5">5 minuten</option><option value="15">15 minuten</option><option value="30">30 minuten</option></select>
-        <button onclick="nextStep(5)">Volgende</button>
-    </div>
-
-    <div class="step" id="step5">
-        <h1>Vraag 5/5</h1>
-        <p>Hoe fit voel je je vandaag?</p>
-        <select id="v_fit"><option value="1">Licht (Ziek/Moe)</option><option value="2" selected>Normaal</option><option value="3">Super fit!</option></select>
-        <button onclick="startApp()">START WORKOUT</button>
-    </div>
-
-    <div class="step" id="workout-scherm">
-        <h2 id="oefening-naam">Klaarmaken...</h2>
-        <div class="stat-badge" id="set-info">Set 1/3</div>
-        <div class="stat-badge" id="rep-info">Reps: 0/12</div>
-        <div id="timer">30</div>
-        <div id="canvas-container">
-            <canvas id="canvas"></canvas>
-        </div>
-        <p id="coach-status">Laden...</p>
+    <div class="step" id="s2">
+        <p>Kies niveau</p>
+        <button onclick="startWorkout(10)">10 REPS</button>
+        <button onclick="startWorkout(20)">20 REPS</button>
     </div>
 </div>
 
+<div id="workout" style="display:none;">
+    <h2 id="ex-name"></h2>
+
+    <div class="stats-grid">
+        <div class="stat-item">SET<br><span id="set-val" class="stat-value">1/3</span></div>
+        <div class="stat-item">REPS<br><span id="rep-val" class="stat-value">0</span></div>
+    </div>
+
+    <div id="video-box">
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <p id="status-msg">Camera laden…</p>
+</div>
+
+</div>
+</div>
+
 <script>
-    const SQUAT_LINK = "https://teachablemachine.withgoogle.com/models/h7p-JBDaq/"; 
-    const PUSHUP_LINK = "https://teachablemachine.withgoogle.com/models/nUrbOTVH6/"; 
+/* ===== MODEL LINKS ===== */
+const LINKS = {
+    squat: "JOUW_SQUAT_LINK/",
+    pushup: "JOUW_PUSHUP_LINK/"
+};
 
-    let currentStep = 1;
-    let model, webcam, ctx, teller = 0, status = "omhoog";
-    let huidigeSet = 1, totaalSets = 3, doelReps = 12;
-    let schema = []; // De lijst met oefeningen
+/* ===== STATE ===== */
+let model, webcam, ctx;
+let gekozenOefening = "";
+let teller = 0, doel = 0;
+let set = 1, maxSets = 3;
+let status = "up";
 
-    function nextStep(step) {
-        document.getElementById(`step${currentStep}`).classList.remove('active');
-        currentStep = step;
-        document.getElementById(`step${currentStep}`).classList.add('active');
-        document.getElementById('progressFill').style.width = (step-1) * 20 + "%";
-    }
+/* ===== PRO REP COUNTING ===== */
+let lastRepTime = 0;
+const REP_COOLDOWN = 700;
+let buffer = [];
+const BUFFER_SIZE = 5;
 
-    async function startApp() {
-        // Bereken plan op basis van keuzes
-        const spier = document.getElementById('v_spier').value;
-        const fit = parseInt(document.getElementById('v_fit').value);
-        
-        doelReps = 8 * fit; // Bijv. 8, 16 of 24 reps
+/* ===== UI ===== */
+function setEx(ex) {
+    gekozenOefening = ex;
+    document.getElementById('s1').classList.remove('active');
+    document.getElementById('s2').classList.add('active');
+}
 
-        if(spier === "benen") schema = ["squat"];
-        else if(spier === "borst") schema = ["pushup"];
-        else schema = ["pushup", "squat"];
+function smooth(v) {
+    buffer.push(v);
+    if (buffer.length > BUFFER_SIZE) buffer.shift();
+    return buffer.reduce((a,b)=>a+b,0) / buffer.length;
+}
 
-        document.getElementById(`step5`).classList.remove('active');
-        document.getElementById('workout-scherm').classList.add('active');
-        document.getElementById('canvas-container').style.display = 'block';
-        
-        runWorkout();
-    }
+function pulse() {
+    const el = document.getElementById('rep-val');
+    el.style.transform = "scale(1.3)";
+    setTimeout(()=>el.style.transform="scale(1)",150);
+}
 
-    async function runWorkout() {
-        if(schema.length === 0) {
-            document.getElementById('workout-scherm').innerHTML = "<h1>🔥 Klaar! Je bent een beest!</h1>";
-            return;
-        }
+/* ===== START ===== */
+async function startWorkout(reps) {
+    doel = reps;
+    document.getElementById('setup').style.display="none";
+    document.getElementById('workout').style.display="block";
+    document.getElementById('ex-name').innerText = gekozenOefening.toUpperCase();
 
-        let huidigeOefening = schema[0];
-        document.getElementById('oefening-naam').innerText = huidigeOefening.toUpperCase();
-        document.getElementById('rep-info').innerText = `Reps: 0/${doelReps}`;
-        
-        let link = (huidigeOefening === "squat") ? SQUAT_LINK : PUSHUP_LINK;
-        model = await tmPose.load(link + "model.json", link + "metadata.json");
-        
-        if(!webcam) {
-            webcam = new tmPose.Webcam(300, 300, true);
-            await webcam.setup();
-            await webcam.play();
-        }
+    model = await tmPose.load(
+        LINKS[gekozenOefening]+"model.json",
+        LINKS[gekozenOefening]+"metadata.json"
+    );
 
-        const canvas = document.getElementById("canvas");
-        ctx = canvas.getContext("2d");
-        window.requestAnimationFrame(loop);
-    }
+    webcam = new tmPose.Webcam(300,300,true);
+    await webcam.setup();
+    await webcam.play();
 
-    async function loop() {
-        webcam.update();
-        await predict();
-        if(document.getElementById('timer').style.display === 'none') {
-            window.requestAnimationFrame(loop);
-        }
-    }
+    const canvas = document.getElementById("canvas");
+    canvas.width = 300; canvas.height = 300;
+    ctx = canvas.getContext("2d");
 
-    async function predict() {
-        const { pose, posenetOutput } = await model.estimatePose(webcam.canvas);
-        const prediction = await model.predict(posenetOutput);
+    document.getElementById('video-box').style.display="block";
+    document.getElementById('status-msg').innerText="GO!";
 
-        if (prediction[1].probability > 0.90) status = "omlaag";
-        if (prediction[0].probability > 0.90 && status === "omlaag") {
-            status = "omhoog";
-            teller++;
-            document.getElementById('rep-info').innerText = `Reps: ${teller}/${doelReps}`;
-            
-            if (teller >= doelReps) {
-                teller = 0;
-                handleSetComplete();
+    requestAnimationFrame(loop);
+}
+
+async function loop() {
+    webcam.update();
+    await predict();
+    requestAnimationFrame(loop);
+}
+
+/* ===== AI LOGIC ===== */
+async function predict() {
+    const { posenetOutput } = await model.estimatePose(webcam.canvas);
+    const p = await model.predict(posenetOutput);
+
+    const up = smooth(p[0].probability);
+    const down = smooth(p[1].probability);
+    const now = Date.now();
+
+    if (down > 0.85 && status === "up") status = "down";
+
+    if (up > 0.85 && status === "down" && now-lastRepTime>REP_COOLDOWN) {
+        status = "up";
+        lastRepTime = now;
+        teller++;
+        pulse();
+        document.getElementById('rep-val').innerText = teller;
+
+        if (teller >= doel) {
+            teller = 0;
+            set++;
+            if (set > maxSets) {
+                alert("MISSIE VOLBRACHT 💪");
+                location.reload();
             }
-        }
-        ctx.drawImage(webcam.canvas, 0, 0);
-    }
-
-    function handleSetComplete() {
-        if (huidigeSet < totaalSets) {
-            huidigeSet++;
-            startRust(15, "Korte rust (set)"); // 15 sec rust tussen sets
-        } else {
-            huidigeSet = 1;
-            schema.shift(); // Verwijder de afgeronde oefening uit de lijst
-            startRust(60, "Lange rust (nieuwe oefening)"); // 60 sec rust tussen oefeningen
+            document.getElementById('set-val').innerText = `${set}/${maxSets}`;
         }
     }
 
-    function startRust(seconden, type) {
-        document.getElementById('canvas-container').style.display = 'none';
-        document.getElementById('timer').style.display = 'block';
-        document.getElementById('coach-status').innerText = type;
-        
-        let timeLeft = seconden;
-        let interval = setInterval(() => {
-            document.getElementById('timer').innerText = timeLeft;
-            timeLeft--;
-            if(timeLeft < 0) {
-                clearInterval(interval);
-                document.getElementById('timer').style.display = 'none';
-                document.getElementById('canvas-container').style.display = 'block';
-                document.getElementById('set-info').innerText = `Set ${huidigeSet}/${totaalSets}`;
-                runWorkout();
-            }
-        }, 1000);
-    }
+    ctx.drawImage(webcam.canvas,0,0);
+}
 </script>
 </body>
 </html>
