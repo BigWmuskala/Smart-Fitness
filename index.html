@@ -3,222 +3,158 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SmartFitness AI</title>
+<title>SmartFitness Pro</title>
 
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.6.0/dist/tf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
 
 <style>
-:root{
-    --bg:#0f0f14;
-    --card:#1a1a22;
-    --accent:#00f2ff;
-    --accent2:#ff007f;
-}
-
 body{
     margin:0;
-    font-family:Segoe UI, sans-serif;
-    background:var(--bg);
+    font-family:Inter, sans-serif;
+    background:#0f172a;
     color:white;
 }
-
-.hidden{display:none;}
-
 .container{
     max-width:500px;
     margin:auto;
     padding:20px;
 }
-
-h1,h2{
-    text-align:center;
-    margin-bottom:20px;
-}
-
 .card{
-    background:var(--card);
+    background:#1e293b;
     padding:20px;
-    border-radius:18px;
+    border-radius:20px;
     margin-bottom:20px;
-    box-shadow:0 0 20px rgba(0,0,0,0.4);
 }
-
-.button{
+button{
     width:100%;
     padding:14px;
-    margin-top:12px;
+    margin-top:10px;
     border:none;
     border-radius:12px;
+    background:#22d3ee;
     font-weight:bold;
-    background:linear-gradient(45deg,var(--accent),#0066ff);
-    color:white;
     cursor:pointer;
-    transition:.3s;
 }
-.button:hover{transform:scale(1.03);}
-
-.exercise-grid{
-    display:grid;
-    grid-template-columns:1fr 1fr;
-    gap:15px;
-}
-
-.exercise-card{
-    padding:20px;
-    border-radius:16px;
-    background:linear-gradient(145deg,#1e1e28,#15151c);
-    text-align:center;
-    cursor:pointer;
-    border:2px solid transparent;
-    transition:.3s;
-}
-
-.exercise-card:hover{
-    border-color:var(--accent);
-    box-shadow:0 0 15px var(--accent);
-}
-
-.stats{
+.hidden{display:none;}
+.stat{
     display:flex;
     justify-content:space-between;
-    margin:15px 0;
 }
-
-.stat{
-    background:rgba(255,255,255,0.05);
-    padding:15px;
-    border-radius:12px;
-    width:48%;
-    text-align:center;
-}
-
-.stat span{
-    display:block;
-    font-size:22px;
-    font-weight:bold;
-    margin-top:5px;
-}
-
 #video-box{
     margin-top:15px;
     border-radius:15px;
     overflow:hidden;
-    border:2px solid var(--accent);
 }
-
 canvas{
     width:100%;
     transform:scaleX(-1);
-}
-
-.timer{
-    text-align:center;
-    font-size:40px;
-    margin:15px 0;
-    color:var(--accent2);
 }
 </style>
 </head>
 
 <body>
-
 <div class="container">
 
-<!-- HOME -->
-<div id="home">
-    <h1>SmartFitness AI</h1>
+<!-- DASHBOARD -->
+<div id="dashboard"></div>
+
+<!-- SETUP -->
+<div id="setup" class="hidden">
     <div class="card">
-        <h2>Hoe vaak wil je trainen?</h2>
-        <button class="button" onclick="setDays(1)">1 dag</button>
-        <button class="button" onclick="setDays(3)">3 dagen</button>
-        <button class="button" onclick="setDays(5)">5 dagen</button>
-        <button class="button" onclick="setDays(7)">Elke dag</button>
+        <h2>Wat wil je trainen?</h2>
+        <button onclick="setGoal('legs')">Benen</button>
+        <button onclick="setGoal('chest')">Borst</button>
     </div>
-</div>
 
-<!-- EXERCISE SELECT -->
-<div id="exercisePage" class="hidden">
-    <h2>Kies je oefening</h2>
-    <div class="exercise-grid">
-        <div class="exercise-card" onclick="selectExercise('squat')">
-            <h3>Squats</h3>
-            <p>Legs</p>
-        </div>
-        <div class="exercise-card" onclick="selectExercise('pushup')">
-            <h3>Push-ups</h3>
-            <p>Chest</p>
-        </div>
+    <div class="card">
+        <h2>Wat is je niveau?</h2>
+        <button onclick="setLevel('beginner')">Beginner</button>
+        <button onclick="setLevel('advanced')">Gevorderd</button>
     </div>
-</div>
-
-<!-- LEVEL SELECT -->
-<div id="levelPage" class="hidden">
-    <h2>Kies je niveau</h2>
-    <button class="button" onclick="startWorkout(5)">Beginner (5 reps)</button>
-    <button class="button" onclick="startWorkout(12)">Sportief (12 reps)</button>
-    <button class="button" onclick="startWorkout(25)">Gevorderd (25 reps)</button>
 </div>
 
 <!-- WORKOUT -->
-<div id="workoutPage" class="hidden">
-    <h2 id="exerciseTitle"></h2>
+<div id="workout" class="hidden">
+    <h2 id="workoutTitle"></h2>
 
-    <div class="stats">
-        <div class="stat">Set <span id="setVal">1/3</span></div>
-        <div class="stat">Reps <span id="repVal">0</span></div>
+    <div class="card stat">
+        <div>Reps</div>
+        <div id="repCounter">0</div>
     </div>
-
-    <div id="timer" class="timer hidden">15</div>
 
     <div id="video-box">
         <canvas id="canvas"></canvas>
     </div>
 
-    <button class="button" onclick="goHome()">Stop workout</button>
+    <button onclick="stopWorkout()">Stop</button>
 </div>
 
 </div>
 
 <script>
 const LINKS={
-    squat:"https://teachablemachine.withgoogle.com/models/Nv8j7aUsi/",
-    pushup:"https://teachablemachine.withgoogle.com/models/VyHCtMsZf/"
+    legs:"https://teachablemachine.withgoogle.com/models/Nv8j7aUsi/",
+    chest:"https://teachablemachine.withgoogle.com/models/VyHCtMsZf/"
 };
 
 let model,webcam,ctx;
 let reps=0,target=0;
-let set=1,maxSets=3;
-let selectedExercise="";
 let status="up";
 let cooldown=false;
+let userData={goal:null,level:null};
 
-function setDays(d){
-    document.getElementById("home").classList.add("hidden");
-    document.getElementById("exercisePage").classList.remove("hidden");
+init();
+
+function init(){
+    const saved=localStorage.getItem("fitnessUser");
+    if(saved){
+        userData=JSON.parse(saved);
+        showDashboard();
+    }else{
+        document.getElementById("setup").classList.remove("hidden");
+    }
 }
 
-function selectExercise(ex){
-    selectedExercise=ex;
-    document.getElementById("exercisePage").classList.add("hidden");
-    document.getElementById("levelPage").classList.remove("hidden");
+function setGoal(goal){
+    userData.goal=goal;
 }
 
-async function startWorkout(r){
-    target=r;
+function setLevel(level){
+    userData.level=level;
+
+    if(level==="beginner") target=8;
+    else target=25;
+
+    localStorage.setItem("fitnessUser",JSON.stringify(userData));
+    showDashboard();
+}
+
+function showDashboard(){
+    document.getElementById("setup").classList.add("hidden");
+
+    let html=`
+        <div class="card">
+            <h2>Today's Workout</h2>
+            <p>Focus: ${userData.goal}</p>
+            <p>Level: ${userData.level}</p>
+            <button onclick="startWorkout()">Start Workout</button>
+        </div>
+    `;
+    document.getElementById("dashboard").innerHTML=html;
+}
+
+async function startWorkout(){
+    document.getElementById("dashboard").innerHTML="";
+    document.getElementById("workout").classList.remove("hidden");
+
+    document.getElementById("workoutTitle").innerText=
+        userData.goal==="legs"?"Squats":"Push-ups";
+
     reps=0;
-    set=1;
+    document.getElementById("repCounter").innerText=`0/${target}`;
 
-    document.getElementById("levelPage").classList.add("hidden");
-    document.getElementById("workoutPage").classList.remove("hidden");
-
-    document.getElementById("exerciseTitle").innerText=
-        selectedExercise==="squat"?"SQUATS":"PUSH-UPS";
-
-    document.getElementById("repVal").innerText=`0/${target}`;
-    document.getElementById("setVal").innerText=`1/${maxSets}`;
-
-    const link=LINKS[selectedExercise];
+    const link=LINKS[userData.goal];
     model=await tmPose.load(link+"model.json",link+"metadata.json");
 
     webcam=new tmPose.Webcam(300,300,true);
@@ -243,8 +179,8 @@ async function predict(){
     const {posenetOutput}=await model.estimatePose(webcam.canvas);
     const prediction=await model.predict(posenetOutput);
 
-    const upClass=prediction.find(p=>p.className.toLowerCase()==="up");
-    const downClass=prediction.find(p=>p.className.toLowerCase()==="down");
+    const upClass=prediction.find(p=>p.className==="up");
+    const downClass=prediction.find(p=>p.className==="down");
 
     if(downClass && downClass.probability>0.9){
         status="down";
@@ -256,46 +192,21 @@ async function predict(){
         setTimeout(()=>cooldown=false,500);
 
         reps++;
-        document.getElementById("repVal").innerText=`${reps}/${target}`;
+        document.getElementById("repCounter").innerText=`${reps}/${target}`;
 
         if(reps>=target){
-            handleRest();
+            alert("Workout Complete!");
+            stopWorkout();
         }
     }
 
     ctx.drawImage(webcam.canvas,0,0);
 }
 
-function handleRest(){
-    if(set>=maxSets){
-        alert("Workout complete!");
-        goHome();
-        return;
-    }
-
-    set++;
-    reps=0;
-
-    document.getElementById("timer").classList.remove("hidden");
-    let time=15;
-    document.getElementById("timer").innerText=time;
-
-    const interval=setInterval(()=>{
-        time--;
-        document.getElementById("timer").innerText=time;
-
-        if(time<=0){
-            clearInterval(interval);
-            document.getElementById("timer").classList.add("hidden");
-            document.getElementById("setVal").innerText=`${set}/${maxSets}`;
-            document.getElementById("repVal").innerText=`0/${target}`;
-        }
-    },1000);
-}
-
-function goHome(){
+function stopWorkout(){
     if(webcam) webcam.stop();
-    location.reload();
+    document.getElementById("workout").classList.add("hidden");
+    showDashboard();
 }
 </script>
 
