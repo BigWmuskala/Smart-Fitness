@@ -12,7 +12,7 @@
 body{
     margin:0;
     font-family:Inter, sans-serif;
-    background:#0b0f1a;
+    background:#0f172a;
     color:white;
 }
 .app{
@@ -24,10 +24,10 @@ body{
 .header{
     padding:20px;
     font-size:22px;
-    font-weight:bold;
+    font-weight:600;
 }
 .card{
-    background:#151a2b;
+    background:#1e293b;
     margin:15px;
     padding:20px;
     border-radius:20px;
@@ -41,16 +41,16 @@ body{
     background:linear-gradient(45deg,#00e0ff,#0077ff);
     color:white;
     font-weight:bold;
+    cursor:pointer;
 }
 .hidden{display:none;}
-
 .bottom-nav{
     position:fixed;
     bottom:0;
     width:100%;
     max-width:500px;
     display:flex;
-    background:#111628;
+    background:#0b1220;
     border-top:1px solid #1f263d;
 }
 .nav-item{
@@ -64,7 +64,6 @@ body{
 .nav-item.active{
     color:#00e0ff;
 }
-
 canvas{
     width:100%;
     border-radius:15px;
@@ -99,7 +98,7 @@ canvas{
 
 <!-- HISTORY -->
 <div id="history" class="hidden">
-    <div class="header">Vorige Workouts</div>
+    <div class="header">History</div>
     <div id="historyList"></div>
 </div>
 
@@ -116,9 +115,9 @@ canvas{
 </div>
 
 <div class="bottom-nav">
-    <div class="nav-item active" onclick="switchTab('home')">Home</div>
-    <div class="nav-item" onclick="switchTab('workouts')">Workouts</div>
-    <div class="nav-item" onclick="switchTab('history')">History</div>
+    <div class="nav-item active" onclick="switchTab('home',0)">Home</div>
+    <div class="nav-item" onclick="switchTab('workouts',1)">Workouts</div>
+    <div class="nav-item" onclick="switchTab('history',2)">History</div>
 </div>
 
 <script>
@@ -190,21 +189,18 @@ function showHome(){
     target=userData.level==="beginner"?8:25;
 
     document.getElementById("todayWorkout").innerHTML=
-        `<h3>Vandaag</h3>
+        `<h3>Vandaag's Workout</h3>
          <p>Focus: ${userData.goal}</p>
          <p>Reps: ${target}</p>
          <button class="button" onclick="startWorkout()">Start</button>`;
 }
 
-function switchTab(tab){
+function switchTab(tab,index){
     document.querySelectorAll(".nav-item").forEach(n=>n.classList.remove("active"));
     document.querySelectorAll(".app > div").forEach(d=>d.classList.add("hidden"));
 
     document.getElementById(tab).classList.remove("hidden");
-
-    if(tab==="home") document.querySelectorAll(".nav-item")[0].classList.add("active");
-    if(tab==="workouts") document.querySelectorAll(".nav-item")[1].classList.add("active");
-    if(tab==="history") document.querySelectorAll(".nav-item")[2].classList.add("active");
+    document.querySelectorAll(".nav-item")[index].classList.add("active");
 
     if(tab==="history") loadHistory();
 }
@@ -213,45 +209,40 @@ async function startWorkout(){
 
     document.getElementById("workoutScreen").classList.remove("hidden");
     document.getElementById("home").classList.add("hidden");
+    document.getElementById("workouts").classList.add("hidden");
 
-    document.getElementById("exerciseTitle").innerText =
-        userData.goal==="legs" ? "Squats" : "Push-ups";
+    document.getElementById("exerciseTitle").innerText=
+        userData.goal==="legs"?"Squats":"Push-ups";
 
-    reps = 0;
-    document.getElementById("repCounter").innerText = `0/${target}`;
+    reps=0;
+    document.getElementById("repCounter").innerText=`0/${target}`;
 
-    try {
+    try{
+        const link=LINKS[userData.goal];
 
-        const link = LINKS[userData.goal];
+        model=await tmPose.load(link+"model.json",link+"metadata.json");
 
-        model = await tmPose.load(link + "model.json", link + "metadata.json");
-
-        webcam = new tmPose.Webcam(300, 300, true);
-
-        await webcam.setup();   // vraagt automatisch toestemming
+        webcam=new tmPose.Webcam(300,300,true);
+        await webcam.setup();
         await webcam.play();
 
-        const canvas = document.getElementById("canvas");
-        canvas.width = 300;
-        canvas.height = 300;
-        ctx = canvas.getContext("2d");
+        const canvas=document.getElementById("canvas");
+        canvas.width=300;
+        canvas.height=300;
+        ctx=canvas.getContext("2d");
 
         window.requestAnimationFrame(loop);
 
-    } catch(error) {
-        alert("Camera kon niet starten. Gebruik localhost of geef toestemming.");
-        console.error(error);
+    }catch(e){
+        alert("Camera start mislukt. Gebruik localhost.");
+        console.error(e);
     }
-}
-
-
-
 }
 
 async function loop(){
     webcam.update();
     await predict();
-    requestAnimationFrame(loop);
+    window.requestAnimationFrame(loop);
 }
 
 async function predict(){
@@ -306,6 +297,12 @@ function loadHistory(){
                </div>`;
     });
     document.getElementById("historyList").innerHTML=html;
+}
+</script>
+
+</body>
+</html>
+
 }
 </script>
 
