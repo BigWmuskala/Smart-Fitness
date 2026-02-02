@@ -12,84 +12,113 @@
 body{
     margin:0;
     font-family:Inter, sans-serif;
-    background:#0f172a;
+    background:#0b0f1a;
     color:white;
 }
-.container{
+.app{
     max-width:500px;
     margin:auto;
+    min-height:100vh;
+    padding-bottom:80px;
+}
+.header{
     padding:20px;
+    font-size:22px;
+    font-weight:bold;
 }
 .card{
-    background:#1e293b;
+    background:#151a2b;
+    margin:15px;
     padding:20px;
     border-radius:20px;
-    margin-bottom:20px;
 }
-button{
+.button{
     width:100%;
     padding:14px;
     margin-top:10px;
     border:none;
     border-radius:12px;
-    background:#22d3ee;
+    background:linear-gradient(45deg,#00e0ff,#0077ff);
+    color:white;
     font-weight:bold;
-    cursor:pointer;
 }
 .hidden{display:none;}
-.stat{
+
+.bottom-nav{
+    position:fixed;
+    bottom:0;
+    width:100%;
+    max-width:500px;
     display:flex;
-    justify-content:space-between;
+    background:#111628;
+    border-top:1px solid #1f263d;
 }
-#video-box{
-    margin-top:15px;
-    border-radius:15px;
-    overflow:hidden;
+.nav-item{
+    flex:1;
+    padding:15px;
+    text-align:center;
+    font-size:14px;
+    cursor:pointer;
+    color:#777;
 }
+.nav-item.active{
+    color:#00e0ff;
+}
+
 canvas{
     width:100%;
+    border-radius:15px;
     transform:scaleX(-1);
 }
 </style>
 </head>
 
 <body>
-<div class="container">
 
-<!-- DASHBOARD -->
-<div id="dashboard"></div>
+<div class="app">
 
-<!-- SETUP -->
-<div id="setup" class="hidden">
+<!-- ONBOARDING -->
+<div id="onboarding">
+    <div class="header">Welkom 👋</div>
+    <div class="card" id="questionBox"></div>
+</div>
+
+<!-- HOME -->
+<div id="home" class="hidden">
+    <div class="header">Home</div>
+    <div class="card" id="todayWorkout"></div>
+</div>
+
+<!-- WORKOUTS -->
+<div id="workouts" class="hidden">
+    <div class="header">Workouts</div>
     <div class="card">
-        <h2>Wat wil je trainen?</h2>
-        <button onclick="setGoal('legs')">Benen</button>
-        <button onclick="setGoal('chest')">Borst</button>
-    </div>
-
-    <div class="card">
-        <h2>Wat is je niveau?</h2>
-        <button onclick="setLevel('beginner')">Beginner</button>
-        <button onclick="setLevel('advanced')">Gevorderd</button>
+        <button class="button" onclick="startWorkout()">Start Vandaag's Workout</button>
     </div>
 </div>
 
-<!-- WORKOUT -->
-<div id="workout" class="hidden">
-    <h2 id="workoutTitle"></h2>
+<!-- HISTORY -->
+<div id="history" class="hidden">
+    <div class="header">Vorige Workouts</div>
+    <div id="historyList"></div>
+</div>
 
-    <div class="card stat">
-        <div>Reps</div>
+<!-- WORKOUT SCREEN -->
+<div id="workoutScreen" class="hidden">
+    <div class="header" id="exerciseTitle"></div>
+    <div class="card">
         <div id="repCounter">0</div>
-    </div>
-
-    <div id="video-box">
         <canvas id="canvas"></canvas>
+        <button class="button" onclick="stopWorkout()">Stop</button>
     </div>
-
-    <button onclick="stopWorkout()">Stop</button>
 </div>
 
+</div>
+
+<div class="bottom-nav">
+    <div class="nav-item active" onclick="switchTab('home')">Home</div>
+    <div class="nav-item" onclick="switchTab('workouts')">Workouts</div>
+    <div class="nav-item" onclick="switchTab('history')">History</div>
 </div>
 
 <script>
@@ -98,11 +127,27 @@ const LINKS={
     chest:"https://teachablemachine.withgoogle.com/models/VyHCtMsZf/"
 };
 
+let userData={};
+let questionStep=0;
 let model,webcam,ctx;
-let reps=0,target=0;
-let status="up";
-let cooldown=false;
-let userData={goal:null,level:null};
+let reps=0,target=0,status="up",cooldown=false;
+
+const questions=[
+    {
+        question:"Wat wil je trainen?",
+        options:[
+            {text:"Benen",value:"legs"},
+            {text:"Borst",value:"chest"}
+        ]
+    },
+    {
+        question:"Wat is je niveau?",
+        options:[
+            {text:"Beginner",value:"beginner"},
+            {text:"Gevorderd",value:"advanced"}
+        ]
+    }
+];
 
 init();
 
@@ -110,45 +155,68 @@ function init(){
     const saved=localStorage.getItem("fitnessUser");
     if(saved){
         userData=JSON.parse(saved);
-        showDashboard();
+        showHome();
     }else{
-        document.getElementById("setup").classList.remove("hidden");
+        showQuestion();
     }
 }
 
-function setGoal(goal){
-    userData.goal=goal;
+function showQuestion(){
+    const q=questions[questionStep];
+    let html=`<h3>${q.question}</h3>`;
+    q.options.forEach(opt=>{
+        html+=`<button class="button" onclick="answer('${opt.value}')">${opt.text}</button>`;
+    });
+    document.getElementById("questionBox").innerHTML=html;
 }
 
-function setLevel(level){
-    userData.level=level;
+function answer(value){
+    if(questionStep===0) userData.goal=value;
+    if(questionStep===1) userData.level=value;
 
-    if(level==="beginner") target=8;
-    else target=25;
-
-    localStorage.setItem("fitnessUser",JSON.stringify(userData));
-    showDashboard();
+    questionStep++;
+    if(questionStep<questions.length){
+        showQuestion();
+    }else{
+        localStorage.setItem("fitnessUser",JSON.stringify(userData));
+        showHome();
+    }
 }
 
-function showDashboard(){
-    document.getElementById("setup").classList.add("hidden");
+function showHome(){
+    document.getElementById("onboarding").classList.add("hidden");
+    document.getElementById("home").classList.remove("hidden");
 
-    let html=`
-        <div class="card">
-            <h2>Today's Workout</h2>
-            <p>Focus: ${userData.goal}</p>
-            <p>Level: ${userData.level}</p>
-            <button onclick="startWorkout()">Start Workout</button>
-        </div>
-    `;
-    document.getElementById("dashboard").innerHTML=html;
+    target=userData.level==="beginner"?8:25;
+
+    document.getElementById("todayWorkout").innerHTML=
+        `<h3>Vandaag</h3>
+         <p>Focus: ${userData.goal}</p>
+         <p>Reps: ${target}</p>
+         <button class="button" onclick="startWorkout()">Start</button>`;
+}
+
+function switchTab(tab){
+    document.querySelectorAll(".nav-item").forEach(n=>n.classList.remove("active"));
+    document.querySelectorAll(".app > div").forEach(d=>d.classList.add("hidden"));
+
+    document.getElementById(tab).classList.remove("hidden");
+
+    if(tab==="home") document.querySelectorAll(".nav-item")[0].classList.add("active");
+    if(tab==="workouts") document.querySelectorAll(".nav-item")[1].classList.add("active");
+    if(tab==="history") document.querySelectorAll(".nav-item")[2].classList.add("active");
+
+    if(tab==="history") loadHistory();
 }
 
 async function startWorkout(){
-    document.getElementById("dashboard").innerHTML="";
-    document.getElementById("workout").classList.remove("hidden");
 
-    document.getElementById("workoutTitle").innerText=
+    await navigator.mediaDevices.getUserMedia({video:true});
+
+    document.getElementById("workoutScreen").classList.remove("hidden");
+    document.getElementById("home").classList.add("hidden");
+
+    document.getElementById("exerciseTitle").innerText=
         userData.goal==="legs"?"Squats":"Push-ups";
 
     reps=0;
@@ -179,14 +247,12 @@ async function predict(){
     const {posenetOutput}=await model.estimatePose(webcam.canvas);
     const prediction=await model.predict(posenetOutput);
 
-    const upClass=prediction.find(p=>p.className==="up");
-    const downClass=prediction.find(p=>p.className==="down");
+    const up=prediction.find(p=>p.className==="up");
+    const down=prediction.find(p=>p.className==="down");
 
-    if(downClass && downClass.probability>0.9){
-        status="down";
-    }
+    if(down && down.probability>0.9) status="down";
 
-    if(upClass && upClass.probability>0.9 && status==="down" && !cooldown){
+    if(up && up.probability>0.9 && status==="down" && !cooldown){
         status="up";
         cooldown=true;
         setTimeout(()=>cooldown=false,500);
@@ -195,7 +261,7 @@ async function predict(){
         document.getElementById("repCounter").innerText=`${reps}/${target}`;
 
         if(reps>=target){
-            alert("Workout Complete!");
+            saveWorkout();
             stopWorkout();
         }
     }
@@ -205,8 +271,30 @@ async function predict(){
 
 function stopWorkout(){
     if(webcam) webcam.stop();
-    document.getElementById("workout").classList.add("hidden");
-    showDashboard();
+    document.getElementById("workoutScreen").classList.add("hidden");
+    showHome();
+}
+
+function saveWorkout(){
+    let history=JSON.parse(localStorage.getItem("history")||"[]");
+    history.push({
+        date:new Date().toLocaleDateString(),
+        reps:target,
+        focus:userData.goal
+    });
+    localStorage.setItem("history",JSON.stringify(history));
+}
+
+function loadHistory(){
+    let history=JSON.parse(localStorage.getItem("history")||"[]");
+    let html="";
+    history.reverse().forEach(h=>{
+        html+=`<div class="card">
+                <b>${h.date}</b><br>
+                ${h.focus} - ${h.reps} reps
+               </div>`;
+    });
+    document.getElementById("historyList").innerHTML=html;
 }
 </script>
 
