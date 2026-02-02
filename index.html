@@ -211,30 +211,41 @@ function switchTab(tab){
 
 async function startWorkout(){
 
-    await navigator.mediaDevices.getUserMedia({video:true});
-
     document.getElementById("workoutScreen").classList.remove("hidden");
     document.getElementById("home").classList.add("hidden");
 
-    document.getElementById("exerciseTitle").innerText=
-        userData.goal==="legs"?"Squats":"Push-ups";
+    document.getElementById("exerciseTitle").innerText =
+        userData.goal==="legs" ? "Squats" : "Push-ups";
 
-    reps=0;
-    document.getElementById("repCounter").innerText=`0/${target}`;
+    reps = 0;
+    document.getElementById("repCounter").innerText = `0/${target}`;
 
-    const link=LINKS[userData.goal];
-    model=await tmPose.load(link+"model.json",link+"metadata.json");
+    try {
 
-    webcam=new tmPose.Webcam(300,300,true);
-    await webcam.setup();
-    await webcam.play();
+        const link = LINKS[userData.goal];
 
-    const canvas=document.getElementById("canvas");
-    canvas.width=300;
-    canvas.height=300;
-    ctx=canvas.getContext("2d");
+        model = await tmPose.load(link + "model.json", link + "metadata.json");
 
-    requestAnimationFrame(loop);
+        webcam = new tmPose.Webcam(300, 300, true);
+
+        await webcam.setup();   // vraagt automatisch toestemming
+        await webcam.play();
+
+        const canvas = document.getElementById("canvas");
+        canvas.width = 300;
+        canvas.height = 300;
+        ctx = canvas.getContext("2d");
+
+        window.requestAnimationFrame(loop);
+
+    } catch(error) {
+        alert("Camera kon niet starten. Gebruik localhost of geef toestemming.");
+        console.error(error);
+    }
+}
+
+
+
 }
 
 async function loop(){
