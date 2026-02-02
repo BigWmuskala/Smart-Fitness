@@ -1,185 +1,303 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="nl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title> Smart-Fitness AI </title>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
-    
-    <style>
-        :root { --neon: #00f2ff; --pink: #ff007f; --bg: #0a0a0c; --card: #16161a; }
-        body { font-family: 'Orbitron', sans-serif; background: var(--bg); color: white; margin: 0; overflow-x: hidden; }
-        .app-container { min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 20px; }
-        
-        /* High-tech styling */
-        .glass-card { background: var(--card); border: 2px solid var(--neon); box-shadow: 0 0 20px rgba(0, 242, 255, 0.2); border-radius: 20px; padding: 25px; width: 100%; max-width: 450px; text-align: center; }
-        h1 { text-transform: uppercase; letter-spacing: 3px; color: var(--neon); text-shadow: 0 0 10px var(--neon); }
-        
-        /* De Cirkel Timer */
-        .timer-circle { position: relative; width: 150px; height: 150px; margin: 20px auto; display: none; }
-        .timer-circle svg { transform: rotate(-90deg); width: 150px; height: 150px; }
-        .timer-circle circle { fill: none; stroke-width: 10; stroke: var(--pink); stroke-dasharray: 440; stroke-dashoffset: 0; transition: stroke-dashoffset 1s linear; }
-        #timer-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 40px; font-weight: bold; color: var(--pink); }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartFitness AI</title>
 
-        /* Camera Box */
-        #video-box { position: relative; width: 100%; border-radius: 15px; border: 3px solid #333; overflow: hidden; display: none; margin-top: 20px; }
-        #video-box.active { border-color: var(--neon); box-shadow: 0 0 30px var(--neon); }
-        canvas { width: 100%; height: auto; transform: scaleX(-1); }
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.6.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
 
-        /* Stats */
-        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 20px 0; }
-        .stat-item { background: rgba(255,255,255,0.05); padding: 15px; border-radius: 10px; border-bottom: 3px solid var(--neon); }
-        .stat-value { font-size: 24px; font-weight: bold; display: block; }
-        
-        button { background: linear-gradient(45deg, var(--neon), #0066ff); color: white; border: none; padding: 15px; border-radius: 10px; font-weight: bold; cursor: pointer; text-transform: uppercase; width: 100%; margin-top: 15px; transition: 0.3s; }
-        button:hover { transform: scale(1.02); box-shadow: 0 0 15px var(--neon); }
-        
-        .step { display: none; }
-        .step.active { display: block; animation: fadeIn 0.5s ease; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-    </style>
+<style>
+:root{
+    --bg:#0f0f14;
+    --card:#1a1a22;
+    --accent:#00f2ff;
+    --accent2:#ff007f;
+}
+
+body{
+    margin:0;
+    font-family:Segoe UI, sans-serif;
+    background:var(--bg);
+    color:white;
+}
+
+.hidden{display:none;}
+
+.container{
+    max-width:500px;
+    margin:auto;
+    padding:20px;
+}
+
+h1,h2{
+    text-align:center;
+    margin-bottom:20px;
+}
+
+.card{
+    background:var(--card);
+    padding:20px;
+    border-radius:18px;
+    margin-bottom:20px;
+    box-shadow:0 0 20px rgba(0,0,0,0.4);
+}
+
+.button{
+    width:100%;
+    padding:14px;
+    margin-top:12px;
+    border:none;
+    border-radius:12px;
+    font-weight:bold;
+    background:linear-gradient(45deg,var(--accent),#0066ff);
+    color:white;
+    cursor:pointer;
+    transition:.3s;
+}
+.button:hover{transform:scale(1.03);}
+
+.exercise-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:15px;
+}
+
+.exercise-card{
+    padding:20px;
+    border-radius:16px;
+    background:linear-gradient(145deg,#1e1e28,#15151c);
+    text-align:center;
+    cursor:pointer;
+    border:2px solid transparent;
+    transition:.3s;
+}
+
+.exercise-card:hover{
+    border-color:var(--accent);
+    box-shadow:0 0 15px var(--accent);
+}
+
+.stats{
+    display:flex;
+    justify-content:space-between;
+    margin:15px 0;
+}
+
+.stat{
+    background:rgba(255,255,255,0.05);
+    padding:15px;
+    border-radius:12px;
+    width:48%;
+    text-align:center;
+}
+
+.stat span{
+    display:block;
+    font-size:22px;
+    font-weight:bold;
+    margin-top:5px;
+}
+
+#video-box{
+    margin-top:15px;
+    border-radius:15px;
+    overflow:hidden;
+    border:2px solid var(--accent);
+}
+
+canvas{
+    width:100%;
+    transform:scaleX(-1);
+}
+
+.timer{
+    text-align:center;
+    font-size:40px;
+    margin:15px 0;
+    color:var(--accent2);
+}
+</style>
 </head>
+
 <body>
 
-<div class="app-container">
-    <div class="glass-card">
-        <div id="setup">
-            <h1>CYBER-PUMP</h1>
-            <div class="step active" id="s1">
-                <p>Hoeveel dagen per week ga je knallen?</p>
-                <button onclick="goStep(1, 2)">3 Dagen</button>
-                <button onclick="goStep(1, 2)">5 Dagen</button>
-                <button onclick="goStep(1, 2)">ELKE DAG</button>
-            </div>
-            <div class="step" id="s2">
-                <p>Kies je wapen (oefening):</p>
-                <button onclick="setEx('squat')">SQUATS (Legs)</button>
-                <button onclick="setEx('pushup')">PUSHUPS (Chest)</button>
-            </div>
-            <div class="step" id="s3">
-                <p>Niveau Selectie:</p>
-                <button onclick="startWorkout(5)">RECRUIT (5 reps)</button>
-                <button onclick="startWorkout(12)">WARRIOR (12 reps)</button>
-                <button onclick="startWorkout(25)">ELITE (25 reps)</button>
-            </div>
+<div class="container">
+
+<!-- HOME -->
+<div id="home">
+    <h1>SmartFitness AI</h1>
+    <div class="card">
+        <h2>Hoe vaak wil je trainen?</h2>
+        <button class="button" onclick="setDays(1)">1 dag</button>
+        <button class="button" onclick="setDays(3)">3 dagen</button>
+        <button class="button" onclick="setDays(5)">5 dagen</button>
+        <button class="button" onclick="setDays(7)">Elke dag</button>
+    </div>
+</div>
+
+<!-- EXERCISE SELECT -->
+<div id="exercisePage" class="hidden">
+    <h2>Kies je oefening</h2>
+    <div class="exercise-grid">
+        <div class="exercise-card" onclick="selectExercise('squat')">
+            <h3>Squats</h3>
+            <p>Legs</p>
         </div>
-
-        <div id="workout" style="display:none;">
-            <h2 id="ex-name">INITIALIZING...</h2>
-            
-            <div class="timer-circle" id="timer-ui">
-                <svg><circle cx="75" cy="75" r="70"></circle></svg>
-                <div id="timer-text">30</div>
-            </div>
-
-            <div class="stats-grid">
-                <div class="stat-item"><span>SET</span><span id="set-val" class="stat-value">1/3</span></div>
-                <div class="stat-item"><span>REPS</span><span id="rep-val" class="stat-value">0</span></div>
-            </div>
-
-            <div id="video-box">
-                <canvas id="canvas"></canvas>
-            </div>
-            <p id="status-msg" style="color: var(--neon); margin-top: 15px;">Camera laden...</p>
+        <div class="exercise-card" onclick="selectExercise('pushup')">
+            <h3>Push-ups</h3>
+            <p>Chest</p>
         </div>
     </div>
 </div>
 
+<!-- LEVEL SELECT -->
+<div id="levelPage" class="hidden">
+    <h2>Kies je niveau</h2>
+    <button class="button" onclick="startWorkout(5)">Beginner (5 reps)</button>
+    <button class="button" onclick="startWorkout(12)">Sportief (12 reps)</button>
+    <button class="button" onclick="startWorkout(25)">Gevorderd (25 reps)</button>
+</div>
+
+<!-- WORKOUT -->
+<div id="workoutPage" class="hidden">
+    <h2 id="exerciseTitle"></h2>
+
+    <div class="stats">
+        <div class="stat">Set <span id="setVal">1/3</span></div>
+        <div class="stat">Reps <span id="repVal">0</span></div>
+    </div>
+
+    <div id="timer" class="timer hidden">15</div>
+
+    <div id="video-box">
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <button class="button" onclick="goHome()">Stop workout</button>
+</div>
+
+</div>
+
 <script>
-    // --- PLAK HIER JE LINKS ---
-    const LINKS = {
-        squat: "https://teachablemachine.withgoogle.com/models/h7p-JBDaq/",
-        pushup: "https://teachablemachine.withgoogle.com/models/nUrbOTVH6/"
-    };
+const LINKS={
+    squat:"https://teachablemachine.withgoogle.com/models/Nv8j7aUsi/",
+    pushup:"https://teachablemachine.withgoogle.com/models/VyHCtMsZf/"
+};
 
-    let model, webcam, ctx, teller = 0, status = "up", doel = 0;
-    let set = 1, maxSets = 3, gekozenOefening = "";
+let model,webcam,ctx;
+let reps=0,target=0;
+let set=1,maxSets=3;
+let selectedExercise="";
+let status="up";
+let cooldown=false;
 
-    function goStep(from, to) {
-        document.getElementById('s'+from).classList.remove('active');
-        document.getElementById('s'+to).classList.add('active');
+function setDays(d){
+    document.getElementById("home").classList.add("hidden");
+    document.getElementById("exercisePage").classList.remove("hidden");
+}
+
+function selectExercise(ex){
+    selectedExercise=ex;
+    document.getElementById("exercisePage").classList.add("hidden");
+    document.getElementById("levelPage").classList.remove("hidden");
+}
+
+async function startWorkout(r){
+    target=r;
+    reps=0;
+    set=1;
+
+    document.getElementById("levelPage").classList.add("hidden");
+    document.getElementById("workoutPage").classList.remove("hidden");
+
+    document.getElementById("exerciseTitle").innerText=
+        selectedExercise==="squat"?"SQUATS":"PUSH-UPS";
+
+    document.getElementById("repVal").innerText=`0/${target}`;
+    document.getElementById("setVal").innerText=`1/${maxSets}`;
+
+    const link=LINKS[selectedExercise];
+    model=await tmPose.load(link+"model.json",link+"metadata.json");
+
+    webcam=new tmPose.Webcam(300,300,true);
+    await webcam.setup();
+    await webcam.play();
+
+    const canvas=document.getElementById("canvas");
+    canvas.width=300;
+    canvas.height=300;
+    ctx=canvas.getContext("2d");
+
+    requestAnimationFrame(loop);
+}
+
+async function loop(){
+    webcam.update();
+    await predict();
+    requestAnimationFrame(loop);
+}
+
+async function predict(){
+    const {posenetOutput}=await model.estimatePose(webcam.canvas);
+    const prediction=await model.predict(posenetOutput);
+
+    const upClass=prediction.find(p=>p.className.toLowerCase()==="up");
+    const downClass=prediction.find(p=>p.className.toLowerCase()==="down");
+
+    if(downClass && downClass.probability>0.9){
+        status="down";
     }
 
-    function setEx(ex) {
-        gekozenOefening = ex;
-        goStep(2, 3);
-    }
+    if(upClass && upClass.probability>0.9 && status==="down" && !cooldown){
+        status="up";
+        cooldown=true;
+        setTimeout(()=>cooldown=false,500);
 
-    async function startWorkout(reps) {
-        doel = reps;
-        document.getElementById('setup').style.display = 'none';
-        document.getElementById('workout').style.display = 'block';
-        document.getElementById('ex-name').innerText = gekozenOefening;
+        reps++;
+        document.getElementById("repVal").innerText=`${reps}/${target}`;
 
-        const link = LINKS[gekozenOefening];
-        model = await tmPose.load(link + "model.json", link + "metadata.json");
-        
-        webcam = new tmPose.Webcam(300, 300, true);
-        await webcam.setup();
-        await webcam.play();
-        
-        document.getElementById('video-box').style.display = 'block';
-        document.getElementById('video-box').classList.add('active');
-        document.getElementById('status-msg').innerText = "SYSTEMS ONLINE. GO!";
-        
-        const canvas = document.getElementById("canvas");
-        canvas.width = 300; canvas.height = 300;
-        ctx = canvas.getContext("2d");
-        window.requestAnimationFrame(loop);
-    }
-
-    async function loop() {
-        webcam.update();
-        await predict();
-        window.requestAnimationFrame(loop);
-    }
-
-    async function predict() {
-        const { pose, posenetOutput } = await model.estimatePose(webcam.canvas);
-        const prediction = await model.predict(posenetOutput);
-
-        if (prediction[1].probability > 0.90) status = "down";
-        if (prediction[0].probability > 0.90 && status === "down") {
-            status = "up";
-            teller++;
-            document.getElementById('rep-val').innerText = `${teller}/${doel}`;
-            
-            if(teller >= doel) {
-                teller = 0;
-                handleRest();
-            }
+        if(reps>=target){
+            handleRest();
         }
-        ctx.drawImage(webcam.canvas, 0, 0);
     }
 
-    function handleRest() {
-        if(set >= maxSets) {
-            alert("MISSIE VOLBRACHT! JE BENT EEN LEGENDE.");
-            location.reload();
-            return;
+    ctx.drawImage(webcam.canvas,0,0);
+}
+
+function handleRest(){
+    if(set>=maxSets){
+        alert("Workout complete!");
+        goHome();
+        return;
+    }
+
+    set++;
+    reps=0;
+
+    document.getElementById("timer").classList.remove("hidden");
+    let time=15;
+    document.getElementById("timer").innerText=time;
+
+    const interval=setInterval(()=>{
+        time--;
+        document.getElementById("timer").innerText=time;
+
+        if(time<=0){
+            clearInterval(interval);
+            document.getElementById("timer").classList.add("hidden");
+            document.getElementById("setVal").innerText=`${set}/${maxSets}`;
+            document.getElementById("repVal").innerText=`0/${target}`;
         }
-        
-        set++;
-        document.getElementById('video-box').style.display = 'none';
-        document.getElementById('timer-ui').style.display = 'block';
-        let timeLeft = 15;
-        const circle = document.querySelector('circle');
+    },1000);
+}
 
-        let countdown = setInterval(() => {
-            timeLeft--;
-            document.getElementById('timer-text').innerText = timeLeft;
-            circle.style.strokeDashoffset = 440 - (440 * (15 - timeLeft) / 15);
-
-            if(timeLeft <= 0) {
-                clearInterval(countdown);
-                document.getElementById('timer-ui').style.display = 'none';
-                document.getElementById('video-box').style.display = 'block';
-                document.getElementById('set-val').innerText = `${set}/${maxSets}`;
-                document.getElementById('rep-val').innerText = `0/${doel}`;
-            }
-        }, 1000);
-    }
+function goHome(){
+    if(webcam) webcam.stop();
+    location.reload();
+}
 </script>
+
 </body>
 </html>
