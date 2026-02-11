@@ -4,100 +4,169 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>SmartFitness Pro - MediaPipe Edition</title>
+    <title>FITNESS AI - NEON EDITION</title>
 
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
 
     <style>
-        :root { --primary: #00e0ff; --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --accent: #3b82f6; }
-        body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; }
-        .app { max-width: 500px; margin: auto; min-height: 100vh; display: flex; flex-direction: column; padding-bottom: 90px; }
-        .header { padding: 40px 20px 10px; font-size: 28px; font-weight: 800; }
-        .card { background: var(--card); margin: 12px 16px; padding: 24px; border-radius: 28px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2); }
-        
-        /* Grafiek & Stats */
-        .chart-container { display: flex; justify-content: space-between; align-items: flex-end; height: 100px; margin-top: 20px; }
-        .bar-wrapper { display: flex; flex-direction: column; align-items: center; flex: 1; }
-        .bar { width: 25px; background: linear-gradient(to top, var(--accent), var(--primary)); border-radius: 6px; transition: height 0.5s; min-height: 4px; }
-        .bar-label { font-size: 10px; color: #94a3b8; margin-top: 5px; }
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=Rajdhani:wght@500;700&display=swap');
 
-        /* Knoppen & Inputs */
-        input, select { width: 100%; padding: 15px; margin: 10px 0; border-radius: 12px; border: 2px solid #334155; background: #0f172a; color: white; box-sizing: border-box; }
-        .button { width: 100%; padding: 18px; margin-top: 10px; border: none; border-radius: 20px; background: linear-gradient(135deg, var(--primary), var(--accent)); color: white; font-weight: 700; cursor: pointer; }
-        .outline-btn { background: transparent; border: 2px solid var(--primary); color: var(--primary); font-size: 14px; padding: 10px; margin-top: 15px; width: 100%; border-radius: 20px; cursor: pointer;}
+        :root { 
+            --neon-blue: #00f2ff; 
+            --neon-purple: #bc13fe; 
+            --dark-bg: #050505; 
+            --card-bg: #111; 
+        }
+
+        body { 
+            margin: 0; 
+            font-family: 'Rajdhani', sans-serif; 
+            background: var(--dark-bg); 
+            color: white; 
+            overflow-x: hidden;
+        }
+
+        .app { max-width: 600px; margin: auto; padding-bottom: 100px; }
+
+        /* Nieuwe Header */
+        .neon-header {
+            padding: 30px 20px;
+            font-family: 'Orbitron', sans-serif;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: var(--neon-blue);
+            text-shadow: 0 0 10px var(--neon-blue);
+            text-align: center;
+        }
+
+        .card { 
+            background: var(--card-bg); 
+            border: 1px solid #333; 
+            margin: 15px; 
+            padding: 25px; 
+            border-radius: 15px; 
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+
+        /* Workout Scherm Specifiek */
+        .workout-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .huge-stats {
+            display: flex;
+            justify-content: space-around;
+            width: 100%;
+            margin-bottom: 20px;
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        .stat-item { text-align: center; }
+        .stat-label { font-size: 12px; color: #888; display: block; }
+        .stat-num { font-size: 40px; color: var(--neon-purple); text-shadow: 0 0 15px var(--neon-purple); }
+
+        .canvas-box {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 4/3;
+            border: 2px solid var(--neon-blue);
+            border-radius: 10px;
+            overflow: hidden;
+            background: #000;
+        }
+
+        canvas { width: 100%; height: 100%; transform: scaleX(-1); }
+
+        .btn-neon {
+            width: 100%;
+            padding: 20px;
+            margin-top: 15px;
+            background: transparent;
+            border: 2px solid var(--neon-blue);
+            color: var(--neon-blue);
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 900;
+            cursor: pointer;
+            transition: 0.3s;
+            text-transform: uppercase;
+        }
+
+        .btn-neon:hover {
+            background: var(--neon-blue);
+            color: black;
+            box-shadow: 0 0 20px var(--neon-blue);
+        }
+
+        #rest-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9);
+            display: none; flex-direction: column; align-items: center; justify-content: center;
+            z-index: 100;
+        }
+
+        .hidden { display: none; }
 
         /* Navigatie */
-        .bottom-nav { position: fixed; bottom: 0; width: 100%; max-width: 500px; display: flex; background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(10px); border-top: 1px solid #1e293b; padding: 10px 0 25px; z-index: 100; }
-        .nav-item { flex: 1; text-align: center; color: #64748b; font-size: 11px; font-weight: 600; cursor: pointer; }
-        .nav-item.active { color: var(--primary); }
-
-        /* Workout UI */
-        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; text-align: center; }
-        .stat-box { background: rgba(255,255,255,0.05); padding: 15px; border-radius: 15px; }
-        .stat-value { font-size: 32px; font-weight: 900; color: var(--primary); }
-        .canvas-wrapper { width: 100%; border-radius: 24px; overflow: hidden; border: 2px solid #334155; position: relative; background: #000; }
-        canvas { width: 100%; display: block; transform: scaleX(-1); }
-        #rest-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(30, 41, 59, 0.95); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 10; border-radius: 24px; }
-        
-        .hidden { display: none; }
+        .nav {
+            position: fixed; bottom: 0; width: 100%; max-width: 600px;
+            display: flex; background: #000; border-top: 2px solid var(--neon-purple);
+            padding: 15px 0;
+        }
+        .nav-link { flex: 1; text-align: center; color: #555; cursor: pointer; font-weight: bold; }
+        .nav-link.active { color: var(--neon-purple); }
     </style>
 </head>
-
 <body>
 
 <div class="app">
     <div id="onboarding">
-        <div class="header">Welkom ⚡</div>
+        <h1 class="neon-header">System Boot</h1>
         <div class="card" id="questionCard"></div>
     </div>
 
     <div id="home" class="hidden">
-        <div class="header">Mijn Dag</div>
+        <h1 class="neon-header">Status: Active</h1>
         <div class="card" id="startActionCard"></div>
-        <div class="card">
-            <h4 style="margin:0; color:#94a3b8">WEEK OVERZICHT</h4>
-            <div class="chart-container" id="weekChart"></div>
-        </div>
+        <div id="weekChart" class="card" style="min-height: 50px; display: flex; align-items: flex-end; gap: 5px;"></div>
     </div>
 
     <div id="workoutScreen" class="hidden">
-        <div class="header" id="exerciseTitle">Training</div>
-        <div class="card">
-            <div class="stats-grid">
-                <div class="stat-box"><span>SET</span><div class="stat-value" id="set-display">1/3</div></div>
-                <div class="stat-box"><span>REPS</span><div class="stat-value" id="rep-display">0/12</div></div>
+        <h1 class="neon-header" id="exerciseTitle">Training</h1>
+        <div class="card workout-container">
+            <div class="huge-stats">
+                <div class="stat-item"><span class="stat-label">SET</span><div class="stat-num" id="set-display">1/3</div></div>
+                <div class="stat-item"><span class="stat-label">REPS</span><div class="stat-num" id="rep-display">0/12</div></div>
             </div>
-            <div class="canvas-wrapper">
+            
+            <div class="canvas-box">
                 <div id="rest-overlay">
-                    <h2 style="color:var(--primary)">RUST</h2>
-                    <div id="rest-timer" style="font-size: 54px; font-weight: 900;">30</div>
+                    <h2 style="color:var(--neon-blue)">RECOVERY MODE</h2>
+                    <div id="rest-timer" style="font-size: 60px; color: white;">30</div>
                 </div>
                 <canvas id="canvas" width="640" height="480"></canvas>
             </div>
-            <button class="button" style="background: #ef4444; margin-top: 25px;" onclick="stopWorkout()">Beëindigen</button>
+
+            <button class="btn-neon" style="border-color: #ff0055; color: #ff0055;" onclick="location.reload()">Stop Program</button>
         </div>
     </div>
 
     <div id="profile" class="hidden">
-        <div class="header">Profiel 👤</div>
+        <h1 class="neon-header">User Data</h1>
         <div class="card">
-            <h3>Mijn Gegevens</h3>
-            <label>Leeftijd</label><input type="number" id="p-age">
-            <label>Lengte (cm)</label><input type="number" id="p-height">
             <label>Niveau</label>
             <select id="p-level"><option value="beginner">Beginner</option><option value="advanced">Gevorderd</option></select>
-            <label>Focus</label>
-            <select id="p-goal"><option value="legs">Benen (Squats)</option><option value="chest">Borst (Push-ups)</option></select>
-            <button class="button" onclick="saveProfile()">Opslaan</button>
+            <button class="btn-neon" onclick="saveProfile()">Update Profile</button>
         </div>
     </div>
 </div>
 
-<div class="bottom-nav" id="mainNav" style="display:none;">
-    <div class="nav-item active" id="n-home" onclick="switchTab('home')">🏠<br>Home</div>
-    <div class="nav-item" id="n-profile" onclick="switchTab('profile')">👤<br>Profiel</div>
+<div class="nav" id="mainNav" style="display:none;">
+    <div class="nav-link active" onclick="switchTab('home')">DASHBOARD</div>
+    <div class="nav-link" onclick="switchTab('profile')">PROFILE</div>
 </div>
 
 <script>
@@ -106,14 +175,12 @@ let currentStep = 1;
 let pose, camera, canvasCtx;
 let reps = 0, currentSet = 1, maxSets = 3, repsPerSet = 12, status = "up", isResting = false;
 
-// --- STEM ---
 function speak(text) {
     const msg = new SpeechSynthesisUtterance(text);
     msg.lang = 'nl-NL';
     window.speechSynthesis.speak(msg);
 }
 
-// --- WISKUNDE: HOEK BEREKENEN ---
 function calculateAngle(a, b, c) {
     let radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
     let angle = Math.abs(radians * 180.0 / Math.PI);
@@ -134,61 +201,33 @@ function init() {
 function renderStep() {
     const container = document.getElementById("questionCard");
     if (currentStep === 1) {
-        container.innerHTML = `<h3>Wat is je leeftijd?</h3><input type="number" id="ageInput"><button class="button" onclick="userData.age=document.getElementById('ageInput').value; currentStep=2; renderStep();">Volgende</button>`;
+        container.innerHTML = `<h3>LEEFTIJD?</h3><input type="number" id="ageInput"><button class="btn-neon" onclick="userData.age=document.getElementById('ageInput').value; currentStep=2; renderStep();">NEXT</button>`;
     } else if (currentStep === 2) {
-        container.innerHTML = `<p style="color:var(--primary)">Top!</p><h3>Lengte (cm)?</h3><input type="number" id="heightInput"><button class="button" onclick="userData.height=document.getElementById('heightInput').value; currentStep=3; renderStep();">Volgende</button>`;
-    } else if (currentStep === 3) {
-        container.innerHTML = `<h3>Jouw niveau?</h3><button class="button" onclick="userData.level='beginner'; currentStep=4; renderStep();">Beginner</button><button class="button" style="margin-top:10px" onclick="userData.level='advanced'; currentStep=4; renderStep();">Gevorderd</button>`;
-    } else if (currentStep === 4) {
-        container.innerHTML = `<h3>Focus gebied?</h3><button class="button" onclick="userData.goal='legs'; finalize();">Benen (Squats)</button><button class="button" style="margin-top:10px" onclick="userData.goal='chest'; finalize();">Borst (Push-ups)</button>`;
+        container.innerHTML = `<h3>DOEL?</h3><button class="btn-neon" onclick="userData.goal='legs'; finalize();">SQUATS (BENEN)</button><button class="btn-neon" style="margin-top:10px" onclick="userData.goal='chest'; finalize();">PUSH-UPS (BORST)</button>`;
     }
 }
 
-function finalize() { localStorage.setItem("fitnessProFinal", JSON.stringify(userData)); showHome(); }
+function finalize() { 
+    userData.level = 'beginner';
+    localStorage.setItem("fitnessProFinal", JSON.stringify(userData)); 
+    showHome(); 
+}
 
 function showHome() {
     hideAll();
     document.getElementById("home").classList.remove("hidden");
     document.getElementById("mainNav").style.display = "flex";
     repsPerSet = userData.level === 'beginner' ? 8 : 12;
-    const goalTitle = userData.goal === 'legs' ? "Squats" : "Push-ups";
     document.getElementById("startActionCard").innerHTML = `
-        <h3 style="margin:0">Klaar voor actie?</h3>
-        <p style="font-size:20px; color:var(--primary)"><b>${maxSets} x ${repsPerSet} ${goalTitle}</b></p>
-        <button class="button" onclick="startWorkout()">START TRAINING</button>
-        <button class="button outline-btn" onclick="toggleGoal()">Wissel naar ${userData.goal==='legs'?'Borst':'Benen'}</button>
+        <h2 style="margin:0">${userData.goal === 'legs' ? 'SQUAT' : 'PUSH-UP'} PROTOCOL</h2>
+        <p>DOEL: ${maxSets} sets van ${repsPerSet}</p>
+        <button class="btn-neon" onclick="startWorkout()">INITIATE TRAINING</button>
     `;
-    updateChart();
-}
-
-function toggleGoal() {
-    userData.goal = userData.goal === 'legs' ? 'chest' : 'legs';
-    finalize();
 }
 
 function switchTab(tab) {
     hideAll();
     document.getElementById(tab).classList.remove("hidden");
-    document.querySelectorAll(".nav-item").forEach(i => i.classList.remove('active'));
-    document.getElementById('n-'+tab).classList.add('active');
-    if(tab==='profile') loadProfileInputs();
-}
-
-function loadProfileInputs() {
-    document.getElementById('p-age').value = userData.age;
-    document.getElementById('p-height').value = userData.height;
-    document.getElementById('p-level').value = userData.level;
-    document.getElementById('p-goal').value = userData.goal;
-}
-
-function saveProfile() {
-    userData.age = document.getElementById('p-age').value;
-    userData.height = document.getElementById('p-height').value;
-    userData.level = document.getElementById('p-level').value;
-    userData.goal = document.getElementById('p-goal').value;
-    finalize();
-    alert("Profiel bijgewerkt!");
-    switchTab('home');
 }
 
 function hideAll() {
@@ -198,34 +237,19 @@ function hideAll() {
     });
 }
 
-// --- MEDIAPIPE LOGICA ---
+// --- MEDIAPIPE CORE ---
 async function startWorkout() {
-    hideAll(); 
-    document.getElementById("mainNav").style.display = "none";
+    hideAll();
     document.getElementById("workoutScreen").classList.remove("hidden");
-    
-    reps = 0; currentSet = 1;
-    document.getElementById("set-display").innerText = `1/3`;
-    document.getElementById("rep-display").innerText = `0/${repsPerSet}`;
-    document.getElementById("exerciseTitle").innerText = userData.goal === 'legs' ? "Squats" : "Push-ups";
-
     const canvasElement = document.getElementById("canvas");
     canvasCtx = canvasElement.getContext("2d");
-
-    // Maak een onzichtbaar video element voor de camera stream
     const videoElement = document.createElement('video');
 
     pose = new Pose({
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
     });
 
-    pose.setOptions({
-        modelComplexity: 1,
-        smoothLandmarks: true,
-        minDetectionConfidence: 0.5,
-        minTrackingConfidence: 0.5
-    });
-
+    pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
     pose.onResults(onResults);
 
     camera = new Camera(videoElement, {
@@ -233,7 +257,7 @@ async function startWorkout() {
         width: 640, height: 480
     });
     
-    speak("Systeem start op. Ga volledig in beeld staan.");
+    speak("Systeem actief. Ga volledig voor de camera staan.");
     camera.start();
 }
 
@@ -243,28 +267,29 @@ function onResults(results) {
     canvasCtx.drawImage(results.image, 0, 0, 640, 480);
 
     if (results.poseLandmarks && !isResting) {
-        // Teken het skelet
-        drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {color: '#00FF00', lineWidth: 4});
-        drawLandmarks(canvasCtx, results.poseLandmarks, {color: '#FF0000', lineWidth: 2, radius: 3});
-
         const lm = results.poseLandmarks;
-        let angle = 0;
 
-        if (userData.goal === 'legs') {
-            // SQUAT: Heup(24), Knie(26), Enkel(28)
-            angle = calculateAngle(lm[24], lm[26], lm[28]);
-            if (angle < 110) status = "down";
-            if (angle > 160 && status === "down") {
-                status = "up";
-                countRep();
-            }
-        } else {
-            // PUSH-UP: Schouder(12), Elleboog(14), Pols(16)
-            angle = calculateAngle(lm[12], lm[14], lm[16]);
-            if (angle < 95) status = "down";
-            if (angle > 155 && status === "down") {
-                status = "up";
-                countRep();
+        // --- DE BELANGRIJKE CHECK: VISIBILITY ---
+        // Alleen doorgaan als heup (24) en knie (26) zichtbaar zijn (geen spook-punten)
+        if (lm[24].visibility > 0.6 && lm[26].visibility > 0.6) {
+            
+            // Teken skelet in neon-groen
+            drawConnectors(canvasCtx, lm, POSE_CONNECTIONS, {color: '#00ff00', lineWidth: 4});
+            drawLandmarks(canvasCtx, lm, {color: '#ff0055', lineWidth: 2, radius: 4});
+
+            let angle = calculateAngle(lm[24], lm[26], lm[28]); // Squat angle
+
+            if (userData.goal === 'legs') {
+                if (angle < 110) status = "down";
+                if (angle > 160 && status === "down") {
+                    status = "up"; countRep();
+                }
+            } else {
+                angle = calculateAngle(lm[12], lm[14], lm[16]); // Push-up angle
+                if (angle < 95) status = "down";
+                if (angle > 155 && status === "down") {
+                    status = "up"; countRep();
+                }
             }
         }
     }
@@ -279,60 +304,24 @@ function countRep() {
 }
 
 function handleSetCompletion() {
-    saveToHistory(reps);
     if (currentSet >= maxSets) {
-        speak("Workout voltooid! Lekker gewerkt.");
-        setTimeout(() => { stopWorkout(); }, 2000);
+        speak("Programma voltooid.");
+        location.reload();
     } else {
         isResting = true;
-        speak("Rust tijd. Neem dertig seconden.");
         document.getElementById("rest-overlay").style.display = "flex";
         let t = 30;
         let timer = setInterval(() => {
-            t--; 
-            document.getElementById("rest-timer").innerText = t;
-            if(t <= 0){ 
-                clearInterval(timer); 
-                isResting = false; 
-                document.getElementById("rest-overlay").style.display = "none"; 
-                reps = 0;
-                currentSet++;
-                speak("Volgende set, succes!");
-                document.getElementById("set-display").innerText = `${currentSet}/3`; 
+            t--; document.getElementById("rest-timer").innerText = t;
+            if(t <= 0) { 
+                clearInterval(timer); isResting = false; 
+                document.getElementById("rest-overlay").style.display = "none";
+                reps = 0; currentSet++;
+                document.getElementById("set-display").innerText = `${currentSet}/3`;
                 document.getElementById("rep-display").innerText = `0/${repsPerSet}`;
             }
         }, 1000);
     }
-}
-
-function saveToHistory(amount) {
-    const history = JSON.parse(localStorage.getItem("repHistory") || "{}");
-    const todayStr = new Date().toISOString().split('T')[0];
-    history[todayStr] = (history[todayStr] || 0) + amount;
-    localStorage.setItem("repHistory", JSON.stringify(history));
-}
-
-function updateChart() {
-    const history = JSON.parse(localStorage.getItem("repHistory") || "{}");
-    const days = ['Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za', 'Zo'];
-    const today = new Date();
-    let html = "";
-    days.forEach((day, index) => {
-        const d = new Date(today);
-        const dayOfWeek = d.getDay();
-        const diff = d.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1) + index;
-        d.setDate(diff);
-        const dateStr = d.toISOString().split('T')[0];
-        const count = history[dateStr] || 0;
-        const h = Math.min(count, 80);
-        html += `<div class="bar-wrapper"><div class="bar" style="height: ${h}px"></div><span class="bar-label">${day}</span></div>`;
-    });
-    document.getElementById("weekChart").innerHTML = html;
-}
-
-function stopWorkout() { 
-    if(camera) camera.stop(); 
-    location.reload(); 
 }
 </script>
 </body>
