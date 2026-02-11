@@ -57,7 +57,7 @@
         .meter-container {
             position: absolute; right: 20px; top: 20%;
             width: 20px; height: 60%; background: rgba(255,255,255,0.1);
-            border: 2px solid #333; border-radius: 10px; overflow: hidden;
+            border: 2px solid #333; border-radius: 10px; overflow: hidden; z-index: 10;
         }
         #progress-fill {
             position: absolute; bottom: 0; width: 100%; height: 0%;
@@ -139,10 +139,12 @@ let reps = 0, currentSet = 1, maxSets = 3, repsPerSet = 12, status = "up", isRes
 let initialHipHeight = null; 
 
 function speak(text) {
-    window.speechSynthesis.cancel();
-    const msg = new SpeechSynthesisUtterance(text);
-    msg.lang = 'nl-NL';
-    window.speechSynthesis.speak(msg);
+    if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+        const msg = new SpeechSynthesisUtterance(text);
+        msg.lang = 'nl-NL';
+        window.speechSynthesis.speak(msg);
+    }
 }
 
 function calculateAngle(a, b, c) {
@@ -152,29 +154,26 @@ function calculateAngle(a, b, c) {
     return angle;
 }
 
-init();
-
-function init() {
-    const saved = localStorage.getItem("fitnessProFinal");
-    if (saved) {
-        userData = JSON.parse(saved);
-        showHome();
-    } else { renderStep(); }
-}
-
 function renderStep() {
     const container = document.getElementById("questionCard");
     if (currentStep === 1) {
-        container.innerHTML = `<h3>IDENTIFICEER LEEFTIJD</h3><input type="number" id="ageInput"><button class="btn-neon" onclick="userData.age=document.getElementById('ageInput').value; currentStep=2; renderStep();">CONFIRM</button>`;
+        container.innerHTML = `<h3>IDENTIFICEER LEEFTIJD</h3><input type="number" id="ageInput" style="width:100%; padding:10px; margin-bottom:10px; background:#222; border:1px solid #444; color:white;"><button class="btn-neon" onclick="saveAge()">CONFIRM</button>`;
     } else if (currentStep === 2) {
-        container.innerHTML = `<h3>SELECTEER PROTOCOL</h3><button class="btn-neon" onclick="userData.goal='legs'; finalize();">SQUATS</button><button class="btn-neon" style="margin-top:10px" onclick="userData.goal='chest'; finalize();">PUSH-UPS</button>`;
+        container.innerHTML = `<h3>SELECTEER PROTOCOL</h3><button class="btn-neon" onclick="setGoal('legs')">SQUATS</button><button class="btn-neon" style="margin-top:10px" onclick="setGoal('chest')">PUSH-UPS</button>`;
     }
 }
 
-function finalize() { 
+function saveAge() {
+    userData.age = document.getElementById('ageInput').value;
+    currentStep = 2;
+    renderStep();
+}
+
+function setGoal(goal) {
+    userData.goal = goal;
     userData.level = 'beginner';
     localStorage.setItem("fitnessProFinal", JSON.stringify(userData)); 
-    showHome(); 
+    showHome();
 }
 
 function showHome() {
@@ -198,16 +197,29 @@ function hideAll() {
 async function startWorkout() {
     hideAll();
     document.getElementById("workoutScreen").classList.remove("hidden");
-    canvasCtx = document.getElementById("canvas").getContext("2d");
+    const canvasElement = document.getElementById("canvas");
+    canvasCtx = canvasElement.getContext("2d");
     const videoElement = document.createElement('video');
 
-    pose = new Pose({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}` });
-    pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
+    pose = new Pose({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+    });
+
+    pose.setOptions({
+        modelComplexity: 1,
+        smoothLandmarks: true,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+    });
+
     pose.onResults(onResults);
 
     camera = new Camera(videoElement, {
-        onFrame: async () => { await pose.send({image: videoElement}); },
-        width: 640, height: 480
+        onFrame: async () => {
+            await pose.send({image: videoElement});
+        },
+        width: 640,
+        height: 480
     });
     
     speak("Systeem gereed. Ga rechtop staan.");
@@ -215,12 +227,16 @@ async function startWorkout() {
 }
 
 function onResults(results) {
+    if (!canvasCtx) return;
+    
     canvasCtx.save();
     canvasCtx.clearRect(0, 0, 640, 480);
     canvasCtx.drawImage(results.image, 0, 0, 640, 480);
 
     if (results.poseLandmarks && !isResting) {
         const lm = results.poseLandmarks;
+        
+        // Teken skelet
         drawConnectors(canvasCtx, lm, POSE_CONNECTIONS, {color: '#00f2ff', lineWidth: 3});
         drawLandmarks(canvasCtx, lm, {color: '#bc13fe', lineWidth: 1, radius: 3});
 
@@ -228,9 +244,9 @@ function onResults(results) {
 
         if (userData.goal === 'legs') {
             // SQUAT LOGICA
-            let leftKneeAngle = calculateAngle(lm[23], lm[25], lm[27]);
-            let rightKneeAngle = calculateAngle(lm[24], lm[26], lm[28]);
-            let avgKneeAngle = (leftKneeAngle + rightKneeAngle) / 2;
+            let leftKnee = calculateAngle(lm[23], lm[25], lm[27]);
+            let rightKnee = calculateAngle(lm[24], lm[26], lm[28]);
+            let avgKneeAngle = (leftKnee + rightKnee) / 2;
 
             let hipY = (lm[23].y + lm[24].y) / 2;
             let ankleY = (lm[27].y + lm[28].y) / 2;
@@ -238,7 +254,79 @@ function onResults(results) {
 
             if (initialHipHeight === null && avgKneeAngle > 170) initialHipHeight = currentHipRelative;
 
-            // Update Progress Bar (Vorm-meter)
-            // Hoe lager je bent, hoe hoger de balk.
-            let rawProgress = (170 - avgKneeAngle) / 60; // Bereik van 170 (0%) naar 110 (100%)
-            let visualPercent = Math.min(Math.max(rawProgress * 100
+            // Meter update
+            let rawProgress = (170 - avgKneeAngle) / 60;
+            let visualPercent = Math.min(Math.max(rawProgress * 100, 0), 100);
+            progressFill.style.height = visualPercent + "%";
+            progressFill.style.backgroundColor = visualPercent > 80 ? "var(--neon-green)" : "var(--neon-blue)";
+
+            // Check Rep
+            let isLowEnough = initialHipHeight !== null && currentHipRelative < (initialHipHeight * 0.85);
+            if (avgKneeAngle < 125 && isLowEnough) status = "down";
+            if (avgKneeAngle > 160 && status === "down") {
+                status = "up";
+                countRep();
+            }
+        } else {
+            // PUSH-UP LOGICA
+            let leftArm = calculateAngle(lm[11], lm[13], lm[15]);
+            let rightArm = calculateAngle(lm[12], lm[14], lm[16]);
+            let avgArmAngle = (leftArm + rightArm) / 2;
+
+            let pushProgress = (160 - avgArmAngle) / 70;
+            let visualPercent = Math.min(Math.max(pushProgress * 100, 0), 100);
+            progressFill.style.height = visualPercent + "%";
+
+            if (avgArmAngle < 100) status = "down";
+            if (avgArmAngle > 150 && status === "down") {
+                status = "up";
+                countRep();
+            }
+        }
+    }
+    canvasCtx.restore();
+}
+
+function countRep() {
+    reps++;
+    document.getElementById("rep-display").innerText = `${reps}/12`;
+    speak(reps.toString());
+    if (reps >= 12) handleSetCompletion();
+}
+
+function handleSetCompletion() {
+    if (currentSet >= maxSets) {
+        speak("Workout voltooid.");
+        setTimeout(() => location.reload(), 2000);
+    } else {
+        isResting = true;
+        initialHipHeight = null;
+        document.getElementById("rest-overlay").style.display = "flex";
+        let t = 30;
+        let timer = setInterval(() => {
+            t--; 
+            document.getElementById("rest-timer").innerText = t;
+            if(t <= 0) { 
+                clearInterval(timer); 
+                isResting = false; 
+                document.getElementById("rest-overlay").style.display = "none";
+                reps = 0; currentSet++;
+                document.getElementById("set-display").innerText = `${currentSet}/3`;
+                document.getElementById("rep-display").innerText = `0/12`;
+                speak("Volgende set.");
+            }
+        }, 1000);
+    }
+}
+
+// Start de onboarding
+const saved = localStorage.getItem("fitnessProFinal");
+if (saved) {
+    userData = JSON.parse(saved);
+    showHome();
+} else {
+    renderStep();
+}
+</script>
+</body>
+</html>
