@@ -1,319 +1,631 @@
-<!DOCTYPE html>
+de code <!DOCTYPE html>
+
 <html lang="nl">
+
 <head>
+
     <meta charset="UTF-8">
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
     <title>FITNESS AI - PRO SKELETON</title>
 
+
+
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
 
+
+
     <style>
+
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=Rajdhani:wght@500;700&display=swap');
 
+
+
         :root { 
+
             --neon-blue: #00f2ff; 
+
             --neon-purple: #bc13fe; 
+
             --dark-bg: #050505; 
+
             --card-bg: #111; 
+
         }
 
+
+
         body { 
+
             margin: 0; 
+
             font-family: 'Rajdhani', sans-serif; 
+
             background: var(--dark-bg); 
+
             color: white; 
+
             overflow-x: hidden;
+
         }
+
+
 
         .app { max-width: 600px; margin: auto; padding-bottom: 100px; }
 
+
+
         .neon-header {
+
             padding: 30px 20px;
+
             font-family: 'Orbitron', sans-serif;
+
             text-transform: uppercase;
+
             letter-spacing: 3px;
+
             color: var(--neon-blue);
+
             text-shadow: 0 0 10px var(--neon-blue);
+
             text-align: center;
+
         }
+
+
 
         .card { 
+
             background: var(--card-bg); 
+
             border: 1px solid #333; 
+
             margin: 15px; 
+
             padding: 25px; 
+
             border-radius: 15px; 
+
             box-shadow: 0 0 15px rgba(0,0,0,0.5);
+
         }
 
+
+
         .stats-row {
+
             display: flex;
+
             justify-content: space-around;
+
             width: 100%;
+
             margin-bottom: 20px;
+
             font-family: 'Orbitron', sans-serif;
+
         }
+
+
 
         .stat-num { font-size: 42px; color: var(--neon-purple); text-shadow: 0 0 15px var(--neon-purple); }
 
+
+
         .canvas-container {
+
             position: relative;
+
             width: 100%;
+
             aspect-ratio: 4/3;
+
             border: 2px solid var(--neon-blue);
+
             border-radius: 12px;
+
             overflow: hidden;
+
             background: #000;
+
         }
+
+
 
         canvas { width: 100%; height: 100%; transform: scaleX(-1); }
 
+
+
         .btn-neon {
+
             width: 100%;
+
             padding: 18px;
+
             margin-top: 15px;
+
             background: transparent;
+
             border: 2px solid var(--neon-blue);
+
             color: var(--neon-blue);
+
             font-family: 'Orbitron', sans-serif;
+
             font-weight: 900;
+
             cursor: pointer;
+
             text-transform: uppercase;
+
             transition: 0.3s;
+
         }
+
+
 
         .btn-neon:hover {
+
             background: var(--neon-blue);
+
             color: black;
+
             box-shadow: 0 0 20px var(--neon-blue);
+
         }
 
+
+
         #rest-overlay {
+
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+
             background: rgba(0,0,0,0.95);
+
             display: none; flex-direction: column; align-items: center; justify-content: center;
+
             z-index: 100;
+
         }
+
+
 
         .hidden { display: none; }
 
+
+
         .nav {
+
             position: fixed; bottom: 0; width: 100%; max-width: 600px;
+
             display: flex; background: #000; border-top: 2px solid var(--neon-purple);
+
             padding: 15px 0; z-index: 200;
+
         }
+
         .nav-link { flex: 1; text-align: center; color: #555; cursor: pointer; font-weight: bold; font-size: 14px; }
+
         .nav-link.active { color: var(--neon-purple); }
+
     </style>
+
 </head>
+
 <body>
 
+
+
 <div class="app">
+
     <div id="onboarding">
+
         <h1 class="neon-header">System Boot</h1>
+
         <div class="card" id="questionCard"></div>
+
     </div>
+
+
 
     <div id="home" class="hidden">
+
         <h1 class="neon-header">Status: Online</h1>
+
         <div class="card" id="startActionCard"></div>
+
     </div>
+
+
 
     <div id="workoutScreen" class="hidden">
+
         <h1 class="neon-header" id="exerciseTitle">Training</h1>
+
         <div class="card">
+
             <div class="stats-row">
+
                 <div style="text-align:center">SET<div class="stat-num" id="set-display">1/3</div></div>
+
                 <div style="text-align:center">REPS<div class="stat-num" id="rep-display">0/12</div></div>
+
             </div>
+
             
+
             <div class="canvas-container">
+
                 <div id="rest-overlay">
+
                     <h2 style="color:var(--neon-blue)">RECOVERY MODE</h2>
+
                     <div id="rest-timer" style="font-size: 64px;">30</div>
+
                 </div>
+
                 <canvas id="canvas" width="640" height="480"></canvas>
+
             </div>
+
+
 
             <button class="btn-neon" style="border-color: #ff0055; color: #ff0055;" onclick="location.reload()">Abort Session</button>
+
         </div>
+
     </div>
+
 </div>
+
+
 
 <div class="nav" id="mainNav" style="display:none;">
+
     <div class="nav-link active">DASHBOARD</div>
+
     <div class="nav-link" onclick="location.reload()">REBOOT</div>
+
 </div>
 
+
+
 <script>
+
 let userData = {};
+
 let currentStep = 1;
+
 let pose, camera, canvasCtx;
+
 let reps = 0, currentSet = 1, maxSets = 3, repsPerSet = 12, status = "up", isResting = false;
-let initialHipHeight = null; 
+
+let initialHipY = null; // Kalibratie voor de heuphoogte
+
+
 
 function speak(text) {
+
     const msg = new SpeechSynthesisUtterance(text);
+
     msg.lang = 'nl-NL';
+
     window.speechSynthesis.speak(msg);
+
 }
 
+
+
 function calculateAngle(a, b, c) {
+
     let radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
+
     let angle = Math.abs(radians * 180.0 / Math.PI);
+
     if (angle > 180.0) angle = 360 - angle;
+
     return angle;
+
 }
+
+
 
 init();
 
+
+
 function init() {
+
     const saved = localStorage.getItem("fitnessProFinal");
+
     if (saved) {
+
         userData = JSON.parse(saved);
+
         showHome();
+
     } else { renderStep(); }
+
 }
+
+
 
 function renderStep() {
+
     const container = document.getElementById("questionCard");
+
     if (currentStep === 1) {
+
         container.innerHTML = `<h3>IDENTIFICEER LEEFTIJD</h3><input type="number" id="ageInput"><button class="btn-neon" onclick="userData.age=document.getElementById('ageInput').value; currentStep=2; renderStep();">CONFIRM</button>`;
+
     } else if (currentStep === 2) {
+
         container.innerHTML = `<h3>SELECTEER PROTOCOL</h3><button class="btn-neon" onclick="userData.goal='legs'; finalize();">SQUATS</button><button class="btn-neon" style="margin-top:10px" onclick="userData.goal='chest'; finalize();">PUSH-UPS</button>`;
+
     }
+
 }
+
+
 
 function finalize() { 
+
     userData.level = 'beginner';
+
     localStorage.setItem("fitnessProFinal", JSON.stringify(userData)); 
+
     showHome(); 
+
 }
+
+
 
 function showHome() {
+
     hideAll();
+
     document.getElementById("home").classList.remove("hidden");
+
     document.getElementById("mainNav").style.display = "flex";
+
     repsPerSet = 12;
+
     document.getElementById("startActionCard").innerHTML = `
+
         <h2 style="margin:0">${userData.goal === 'legs' ? 'SQUAT' : 'PUSH-UP'} MODE</h2>
+
         <p>DOEL: 3 SETS VAN 12</p>
+
         <button class="btn-neon" onclick="startWorkout()">START ANALYSE</button>
+
     `;
+
 }
+
+
 
 function hideAll() {
+
     ["onboarding", "home", "workoutScreen"].forEach(id => {
+
         const el = document.getElementById(id);
+
         if(el) el.classList.add("hidden");
+
     });
+
 }
+
+
 
 async function startWorkout() {
+
     hideAll();
+
     document.getElementById("workoutScreen").classList.remove("hidden");
+
     const canvasElement = document.getElementById("canvas");
+
     canvasCtx = canvasElement.getContext("2d");
+
     const videoElement = document.createElement('video');
 
+
+
     pose = new Pose({
+
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+
     });
+
+
 
     pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
+
     pose.onResults(onResults);
 
+
+
     camera = new Camera(videoElement, {
+
         onFrame: async () => { await pose.send({image: videoElement}); },
+
         width: 640, height: 480
+
     });
+
     
-    speak("Systeem gereed. Zorg dat je hele lichaam zichtbaar is.");
+
+    speak("Systeem gereed. Ga rechtop staan.");
+
     camera.start();
+
 }
+
+
 
 function onResults(results) {
+
     canvasCtx.save();
+
     canvasCtx.clearRect(0, 0, 640, 480);
+
     canvasCtx.drawImage(results.image, 0, 0, 640, 480);
 
+
+
     if (results.poseLandmarks && !isResting) {
+
         const lm = results.poseLandmarks;
 
-        // Teken skelet
-        drawConnectors(canvasCtx, lm, POSE_CONNECTIONS, {color: '#00f2ff', lineWidth: 3});
-        drawLandmarks(canvasCtx, lm, {color: '#bc13fe', lineWidth: 1, radius: 3});
 
-        if (userData.goal === 'legs') {
-            // SQUAT LOGICA (Hoek + Verplaatsing)
-            let leftKneeAngle = calculateAngle(lm[23], lm[25], lm[27]);
-            let rightKneeAngle = calculateAngle(lm[24], lm[26], lm[28]);
-            let avgKneeAngle = (leftKneeAngle + rightKneeAngle) / 2;
 
-            // Meet heup t.o.v enkel (voorkomt valsspelen door knie heffen)
-            let hipY = (lm[23].y + lm[24].y) / 2;
-            let ankleY = (lm[27].y + lm[28].y) / 2;
-            let currentHipRelative = ankleY - hipY;
+        // Visibility check op heupen
 
-            // Kalibreer starthoogte bij het rechtop staan
-            if (initialHipHeight === null && avgKneeAngle > 170) {
-                initialHipHeight = currentHipRelative;
+        if (lm[24].visibility > 0.7 && lm[23].visibility > 0.7) {
+
+            
+
+            drawConnectors(canvasCtx, lm, POSE_CONNECTIONS, {color: '#00FF00', lineWidth: 4});
+
+            drawLandmarks(canvasCtx, lm, {color: '#FF0055', lineWidth: 2, radius: 4});
+
+
+
+            // --- DE HEUP-FIX ---
+
+            let currentHipY = (lm[24].y + lm[23].y) / 2; // Gemiddelde hoogte van beide heupen
+
+
+
+            // Eerste meting bij rechtop staan
+
+            if (initialHipY === null) {
+
+                initialHipY = currentHipY;
+
             }
 
-            // Detectie: Moet gebogen zijn EN heup moet gezakt zijn
-            let isLowEnough = initialHipHeight !== null && currentHipRelative < (initialHipHeight * 0.82);
 
-            if (avgKneeAngle < 120 && isLowEnough) {
-                status = "down";
+
+            if (userData.goal === 'legs') {
+
+                let kneeAngle = calculateAngle(lm[24], lm[26], lm[28]);
+
+                
+
+                // Ben je gezakt? (Heup moet minstens 8% van het scherm zakken)
+
+                let isActuallyLowering = currentHipY > (initialHipY + 0.08);
+
+
+
+                if (kneeAngle < 115 && isActuallyLowering) {
+
+                    status = "down";
+
+                }
+
+                if (kneeAngle > 160 && status === "down") {
+
+                    status = "up";
+
+                    countRep();
+
+                }
+
+            } else {
+
+                // Push-up: kijkt naar schouder-hoogte ipv heup-hoogte
+
+                let shoulderAngle = calculateAngle(lm[12], lm[14], lm[16]);
+
+                if (shoulderAngle < 95) status = "down";
+
+                if (shoulderAngle > 155 && status === "down") {
+
+                    status = "up";
+
+                    countRep();
+
+                }
+
             }
-            if (avgKneeAngle > 160 && status === "down") {
-                status = "up";
-                countRep();
-            }
-        } else {
-            // PUSH-UP LOGICA
-            let shoulderAngle = calculateAngle(lm[12], lm[14], lm[16]);
-            if (shoulderAngle < 95) status = "down";
-            if (shoulderAngle > 155 && status === "down") {
-                status = "up";
-                countRep();
-            }
+
         }
+
     }
+
     canvasCtx.restore();
+
 }
+
+
 
 function countRep() {
+
     reps++;
+
     document.getElementById("rep-display").innerText = `${reps}/12`;
+
     speak(reps.toString());
+
     if (reps >= 12) handleSetCompletion();
+
 }
 
+
+
 function handleSetCompletion() {
+
     if (currentSet >= maxSets) {
+
         speak("Workout voltooid. Uitstekend gedaan.");
-        setTimeout(() => location.reload(), 2000);
+
+        location.reload();
+
     } else {
+
         isResting = true;
-        initialHipHeight = null; // Reset voor nieuwe set
+
+        initialHipY = null; // Reset voor nieuwe set
+
         document.getElementById("rest-overlay").style.display = "flex";
+
         let t = 30;
+
         let timer = setInterval(() => {
+
             t--; document.getElementById("rest-timer").innerText = t;
+
             if(t <= 0) { 
+
                 clearInterval(timer); isResting = false; 
+
                 document.getElementById("rest-overlay").style.display = "none";
+
                 reps = 0; currentSet++;
+
                 document.getElementById("set-display").innerText = `${currentSet}/3`;
+
                 document.getElementById("rep-display").innerText = `0/12`;
-                speak("Begin met volgende set");
+
             }
+
         }, 1000);
+
     }
+
 }
+
 </script>
+
 </body>
+
 </html>
