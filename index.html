@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>FITNESS AI - SKELETON EDITION</title>
+    <title>FITNESS AI - PRO SKELETON</title>
 
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -45,9 +45,10 @@
             margin: 15px; 
             padding: 25px; 
             border-radius: 15px; 
+            box-shadow: 0 0 15px rgba(0,0,0,0.5);
         }
 
-        .huge-stats {
+        .stats-row {
             display: flex;
             justify-content: space-around;
             width: 100%;
@@ -55,24 +56,23 @@
             font-family: 'Orbitron', sans-serif;
         }
 
-        .stat-num { font-size: 40px; color: var(--neon-purple); text-shadow: 0 0 15px var(--neon-purple); }
+        .stat-num { font-size: 42px; color: var(--neon-purple); text-shadow: 0 0 15px var(--neon-purple); }
 
-        .canvas-box {
+        .canvas-container {
             position: relative;
             width: 100%;
             aspect-ratio: 4/3;
             border: 2px solid var(--neon-blue);
-            border-radius: 10px;
+            border-radius: 12px;
             overflow: hidden;
             background: #000;
         }
 
-        /* De camera wordt gespiegeld zodat het natuurlijk aanvoelt */
         canvas { width: 100%; height: 100%; transform: scaleX(-1); }
 
         .btn-neon {
             width: 100%;
-            padding: 20px;
+            padding: 18px;
             margin-top: 15px;
             background: transparent;
             border: 2px solid var(--neon-blue);
@@ -81,6 +81,7 @@
             font-weight: 900;
             cursor: pointer;
             text-transform: uppercase;
+            transition: 0.3s;
         }
 
         .btn-neon:hover {
@@ -91,7 +92,7 @@
 
         #rest-overlay {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.9);
+            background: rgba(0,0,0,0.95);
             display: none; flex-direction: column; align-items: center; justify-content: center;
             z-index: 100;
         }
@@ -101,9 +102,9 @@
         .nav {
             position: fixed; bottom: 0; width: 100%; max-width: 600px;
             display: flex; background: #000; border-top: 2px solid var(--neon-purple);
-            padding: 15px 0;
+            padding: 15px 0; z-index: 200;
         }
-        .nav-link { flex: 1; text-align: center; color: #555; cursor: pointer; font-weight: bold; }
+        .nav-link { flex: 1; text-align: center; color: #555; cursor: pointer; font-weight: bold; font-size: 14px; }
         .nav-link.active { color: var(--neon-purple); }
     </style>
 </head>
@@ -116,42 +117,34 @@
     </div>
 
     <div id="home" class="hidden">
-        <h1 class="neon-header">Status: Active</h1>
+        <h1 class="neon-header">Status: Online</h1>
         <div class="card" id="startActionCard"></div>
-        <div id="weekChart" class="card" style="min-height: 50px; display: flex; align-items: flex-end; gap: 5px;"></div>
     </div>
 
     <div id="workoutScreen" class="hidden">
         <h1 class="neon-header" id="exerciseTitle">Training</h1>
         <div class="card">
-            <div class="huge-stats">
-                <div class="stat-item">SET<div class="stat-num" id="set-display">1/3</div></div>
-                <div class="stat-item">REPS<div class="stat-num" id="rep-display">0/12</div></div>
+            <div class="stats-row">
+                <div style="text-align:center">SET<div class="stat-num" id="set-display">1/3</div></div>
+                <div style="text-align:center">REPS<div class="stat-num" id="rep-display">0/12</div></div>
             </div>
             
-            <div class="canvas-box">
+            <div class="canvas-container">
                 <div id="rest-overlay">
-                    <h2 style="color:var(--neon-blue)">RECOVERY</h2>
-                    <div id="rest-timer" style="font-size: 60px; color: white;">30</div>
+                    <h2 style="color:var(--neon-blue)">RECOVERY MODE</h2>
+                    <div id="rest-timer" style="font-size: 64px;">30</div>
                 </div>
                 <canvas id="canvas" width="640" height="480"></canvas>
             </div>
 
-            <button class="btn-neon" style="border-color: #ff0055; color: #ff0055;" onclick="location.reload()">Stop Program</button>
-        </div>
-    </div>
-
-    <div id="profile" class="hidden">
-        <h1 class="neon-header">Profile</h1>
-        <div class="card">
-            <button class="btn-neon" onclick="saveProfile()">Reset Data</button>
+            <button class="btn-neon" style="border-color: #ff0055; color: #ff0055;" onclick="location.reload()">Abort Session</button>
         </div>
     </div>
 </div>
 
 <div class="nav" id="mainNav" style="display:none;">
-    <div class="nav-link active" onclick="switchTab('home')">DASHBOARD</div>
-    <div class="nav-link" onclick="switchTab('profile')">PROFILE</div>
+    <div class="nav-link active">DASHBOARD</div>
+    <div class="nav-link" onclick="location.reload()">REBOOT</div>
 </div>
 
 <script>
@@ -159,6 +152,7 @@ let userData = {};
 let currentStep = 1;
 let pose, camera, canvasCtx;
 let reps = 0, currentSet = 1, maxSets = 3, repsPerSet = 12, status = "up", isResting = false;
+let initialHipY = null; // Kalibratie voor de heuphoogte
 
 function speak(text) {
     const msg = new SpeechSynthesisUtterance(text);
@@ -186,9 +180,9 @@ function init() {
 function renderStep() {
     const container = document.getElementById("questionCard");
     if (currentStep === 1) {
-        container.innerHTML = `<h3>LEEFTIJD?</h3><input type="number" id="ageInput"><button class="btn-neon" onclick="userData.age=document.getElementById('ageInput').value; currentStep=2; renderStep();">NEXT</button>`;
+        container.innerHTML = `<h3>IDENTIFICEER LEEFTIJD</h3><input type="number" id="ageInput"><button class="btn-neon" onclick="userData.age=document.getElementById('ageInput').value; currentStep=2; renderStep();">CONFIRM</button>`;
     } else if (currentStep === 2) {
-        container.innerHTML = `<h3>DOEL?</h3><button class="btn-neon" onclick="userData.goal='legs'; finalize();">SQUATS (BENEN)</button><button class="btn-neon" style="margin-top:10px" onclick="userData.goal='chest'; finalize();">PUSH-UPS (BORST)</button>`;
+        container.innerHTML = `<h3>SELECTEER PROTOCOL</h3><button class="btn-neon" onclick="userData.goal='legs'; finalize();">SQUATS</button><button class="btn-neon" style="margin-top:10px" onclick="userData.goal='chest'; finalize();">PUSH-UPS</button>`;
     }
 }
 
@@ -202,26 +196,21 @@ function showHome() {
     hideAll();
     document.getElementById("home").classList.remove("hidden");
     document.getElementById("mainNav").style.display = "flex";
-    repsPerSet = userData.level === 'beginner' ? 8 : 12;
+    repsPerSet = 12;
     document.getElementById("startActionCard").innerHTML = `
-        <h2 style="margin:0">${userData.goal === 'legs' ? 'SQUAT' : 'PUSH-UP'} PROTOCOL</h2>
-        <button class="btn-neon" onclick="startWorkout()">START CAMERA</button>
+        <h2 style="margin:0">${userData.goal === 'legs' ? 'SQUAT' : 'PUSH-UP'} MODE</h2>
+        <p>DOEL: 3 SETS VAN 12</p>
+        <button class="btn-neon" onclick="startWorkout()">START ANALYSE</button>
     `;
 }
 
-function switchTab(tab) {
-    hideAll();
-    document.getElementById(tab).classList.remove("hidden");
-}
-
 function hideAll() {
-    ["onboarding", "home", "workoutScreen", "profile"].forEach(id => {
+    ["onboarding", "home", "workoutScreen"].forEach(id => {
         const el = document.getElementById(id);
         if(el) el.classList.add("hidden");
     });
 }
 
-// --- MEDIAPIPE LOGICA ---
 async function startWorkout() {
     hideAll();
     document.getElementById("workoutScreen").classList.remove("hidden");
@@ -233,7 +222,7 @@ async function startWorkout() {
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
     });
 
-    pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
+    pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
     pose.onResults(onResults);
 
     camera = new Camera(videoElement, {
@@ -241,40 +230,52 @@ async function startWorkout() {
         width: 640, height: 480
     });
     
-    speak("Camera start. Ga volledig in beeld staan.");
+    speak("Systeem gereed. Ga rechtop staan.");
     camera.start();
 }
 
 function onResults(results) {
     canvasCtx.save();
     canvasCtx.clearRect(0, 0, 640, 480);
-    
-    // Teken de video feed
     canvasCtx.drawImage(results.image, 0, 0, 640, 480);
 
     if (results.poseLandmarks && !isResting) {
         const lm = results.poseLandmarks;
 
-        // CHECK: Is de persoon wel echt in beeld? (visibility score > 0.6)
-        // Dit voorkomt dat hij willekeurige punten telt als je wegloopt
-        if (lm[24].visibility > 0.6 && lm[26].visibility > 0.6) {
+        // Visibility check op heupen
+        if (lm[24].visibility > 0.7 && lm[23].visibility > 0.7) {
             
-            // HIER WORDEN DE GROENE LIJNEN GETEKEND
             drawConnectors(canvasCtx, lm, POSE_CONNECTIONS, {color: '#00FF00', lineWidth: 4});
             drawLandmarks(canvasCtx, lm, {color: '#FF0055', lineWidth: 2, radius: 4});
 
-            let angle = 0;
+            // --- DE HEUP-FIX ---
+            let currentHipY = (lm[24].y + lm[23].y) / 2; // Gemiddelde hoogte van beide heupen
+
+            // Eerste meting bij rechtop staan
+            if (initialHipY === null) {
+                initialHipY = currentHipY;
+            }
+
             if (userData.goal === 'legs') {
-                angle = calculateAngle(lm[24], lm[26], lm[28]); // Kniehoek
-                if (angle < 110) status = "down";
-                if (angle > 160 && status === "down") {
-                    status = "up"; countRep();
+                let kneeAngle = calculateAngle(lm[24], lm[26], lm[28]);
+                
+                // Ben je gezakt? (Heup moet minstens 8% van het scherm zakken)
+                let isActuallyLowering = currentHipY > (initialHipY + 0.08);
+
+                if (kneeAngle < 115 && isActuallyLowering) {
+                    status = "down";
+                }
+                if (kneeAngle > 160 && status === "down") {
+                    status = "up";
+                    countRep();
                 }
             } else {
-                angle = calculateAngle(lm[12], lm[14], lm[16]); // Ellebooghoek
-                if (angle < 95) status = "down";
-                if (angle > 155 && status === "down") {
-                    status = "up"; countRep();
+                // Push-up: kijkt naar schouder-hoogte ipv heup-hoogte
+                let shoulderAngle = calculateAngle(lm[12], lm[14], lm[16]);
+                if (shoulderAngle < 95) status = "down";
+                if (shoulderAngle > 155 && status === "down") {
+                    status = "up";
+                    countRep();
                 }
             }
         }
@@ -284,17 +285,18 @@ function onResults(results) {
 
 function countRep() {
     reps++;
-    document.getElementById("rep-display").innerText = `${reps}/${repsPerSet}`;
+    document.getElementById("rep-display").innerText = `${reps}/12`;
     speak(reps.toString());
-    if (reps >= repsPerSet) handleSetCompletion();
+    if (reps >= 12) handleSetCompletion();
 }
 
 function handleSetCompletion() {
     if (currentSet >= maxSets) {
-        speak("Workout voltooid.");
+        speak("Workout voltooid. Uitstekend gedaan.");
         location.reload();
     } else {
         isResting = true;
+        initialHipY = null; // Reset voor nieuwe set
         document.getElementById("rest-overlay").style.display = "flex";
         let t = 30;
         let timer = setInterval(() => {
@@ -304,7 +306,7 @@ function handleSetCompletion() {
                 document.getElementById("rest-overlay").style.display = "none";
                 reps = 0; currentSet++;
                 document.getElementById("set-display").innerText = `${currentSet}/3`;
-                document.getElementById("rep-display").innerText = `0/${repsPerSet}`;
+                document.getElementById("rep-display").innerText = `0/12`;
             }
         }, 1000);
     }
