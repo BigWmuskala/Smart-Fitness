@@ -1,2 +1,2418 @@
-<!DOCTYPE html> <html lang="nl"> <head> <meta charset="UTF-8"> <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"> <title>FITNESS AI - PRO SKELETON</title> <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script> <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script> <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script> <style> @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=Rajdhani:wght@500;700&display=swap'); :root { --neon-blue: #00f2ff; --neon-purple: #bc13fe; --neon-green: #39ff14; --dark-bg: #050505; --card-bg: #111; } body { margin: 0; font-family: 'Rajdhani', sans-serif; background: var(--dark-bg); color: white; overflow-x: hidden; } .app { max-width: 600px; margin: auto; padding-bottom: 100px; } .neon-header { padding: 30px 20px; font-family: 'Orbitron', sans-serif; text-transform: uppercase; letter-spacing: 3px; color: var(--neon-blue); text-shadow: 0 0 10px var(--neon-blue); text-align: center; } .card { background: var(--card-bg); border: 1px solid #333; margin: 15px; padding: 25px; border-radius: 15px; box-shadow: 0 0 15px rgba(0,0,0,0.5); } .stats-row { display: flex; justify-content: space-around; width: 100%; margin-bottom: 20px; font-family: 'Orbitron', sans-serif; } .stat-num { font-size: 42px; color: var(--neon-purple); text-shadow: 0 0 15px var(--neon-purple); } .canvas-container { position: relative; width: 100%; aspect-ratio: 4/3; border: 2px solid var(--neon-blue); border-radius: 12px; overflow: hidden; background: #000; } canvas { width: 100%; height: 100%; transform: scaleX(-1); } /* Vorm-meter styling */ .meter-container { position: absolute; right: 20px; top: 20%; width: 25px; height: 60%; background: rgba(255,255,255,0.1); border: 2px solid #333; border-radius: 12px; overflow: hidden; z-index: 10; } #progress-fill { position: absolute; bottom: 0; width: 100%; height: 0%; background: var(--neon-blue); box-shadow: 0 0 15px var(--neon-blue); transition: height 0.1s ease-out; } .btn-neon { width: 100%; padding: 18px; margin-top: 15px; background: transparent; border: 2px solid var(--neon-blue); color: var(--neon-blue); font-family: 'Orbitron', sans-serif; font-weight: 900; cursor: pointer; text-transform: uppercase; transition: 0.3s; } .btn-neon:hover { background: var(--neon-blue); color: black; box-shadow: 0 0 20px var(--neon-blue); } #rest-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 100; } .hidden { display: none; } .nav { position: fixed; bottom: 0; width: 100%; max-width: 600px; display: flex; background: #000; border-top: 2px solid var(--neon-purple); padding: 15px 0; z-index: 200; } .nav-link { flex: 1; text-align: center; color: #555; cursor: pointer; font-weight: bold; } .nav-link.active { color: var(--neon-purple); } </style> </head> <body> <div class="app"> <div id="onboarding"> <h1 class="neon-header">System Boot</h1> <div class="card" id="questionCard"></div> </div> <div id="home" class="hidden"> <h1 class="neon-header">Status: Online</h1> <div class="card" id="startActionCard"></div> </div> <div id="workoutScreen" class="hidden"> <h1 class="neon-header" id="exerciseTitle">Training</h1> <div class="card"> <div class="stats-row"> <div style="text-align:center">SET<div class="stat-num" id="set-display">1/3</div></div> <div style="text-align:center">REPS<div class="stat-num" id="rep-display">0/12</div></div> </div> <div class="canvas-container"> <div id="rest-overlay"> <h2 style="color:var(--neon-blue)">RECOVERY MODE</h2> <div id="rest-timer" style="font-size: 64px;">30</div> </div> <div class="meter-container"> <div id="progress-fill"></div> </div> <canvas id="canvas" width="640" height="480"></canvas> </div> <button class="btn-neon" style="border-color: #ff0055; color: #ff0055;" onclick="location.reload()">Abort Session</button> </div> </div> </div> <div class="nav" id="mainNav" style="display:none;"> <div class="nav-link active">DASHBOARD</div> <div class="nav-link" onclick="localStorage.clear(); location.reload();">RESET</div> </div> <script> let userData = {}; let currentStep = 1; let pose, camera, canvasCtx; let reps = 0, currentSet = 1, maxSets = 3, repsPerSet = 12, status = "up", isResting = false; let initialHipY = null; function speak(text) { window.speechSynthesis.cancel(); const msg = new SpeechSynthesisUtterance(text); msg.lang = 'nl-NL'; window.speechSynthesis.speak(msg); } function calculateAngle(a, b, c) { let radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x); let angle = Math.abs(radians * 180.0 / Math.PI); if (angle > 180.0) angle = 360 - angle; return angle; } function renderStep() { const container = document.getElementById("questionCard"); if (currentStep === 1) { container.innerHTML = <h3>IDENTIFICEER LEEFTIJD</h3><input type="number" id="ageInput" style="width:80%; padding:10px; margin-bottom:10px;"><button class="btn-neon" onclick="saveAge()">CONFIRM</button>; } else if (currentStep === 2) { container.innerHTML = <h3>SELECTEER PROTOCOL</h3><button class="btn-neon" onclick="setGoal('legs')">SQUATS</button><button class="btn-neon" style="margin-top:10px" onclick="setGoal('chest')">PUSH-UPS</button>; } } function saveAge() { userData.age = document.getElementById('ageInput').value; currentStep = 2; renderStep(); } function setGoal(goal) { userData.goal = goal; userData.level = 'beginner'; localStorage.setItem("fitnessProFinal", JSON.stringify(userData)); showHome(); } function showHome() { hideAll(); document.getElementById("home").classList.remove("hidden"); document.getElementById("mainNav").style.display = "flex"; document.getElementById("startActionCard").innerHTML = <h2 style="margin:0">${userData.goal === 'legs' ? 'SQUAT' : 'PUSH-UP'} MODE</h2> <p>DOEL: 3 SETS VAN 12</p> <button class="btn-neon" onclick="startWorkout()">START ANALYSE</button> ; } function hideAll() { ["onboarding", "home", "workoutScreen"].forEach(id => { const el = document.getElementById(id); if(el) el.classList.add("hidden"); }); } async function startWorkout() { hideAll(); document.getElementById("workoutScreen").classList.remove("hidden"); canvasCtx = document.getElementById("canvas").getContext("2d"); const videoElement = document.createElement('video'); pose = new Pose({ locateFile: (file) => https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file} }); pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 }); pose.onResults(onResults); camera = new Camera(videoElement, { onFrame: async () => { await pose.send({image: videoElement}); }, width: 640, height: 480 }); speak("Systeem gereed. Ga rechtop staan."); camera.start(); } function onResults(results) { canvasCtx.save(); canvasCtx.clearRect(0, 0, 640, 480); canvasCtx.drawImage(results.image, 0, 0, 640, 480); if (results.poseLandmarks && !isResting) { const lm = results.poseLandmarks; drawConnectors(canvasCtx, lm, POSE_CONNECTIONS, {color: '#00f2ff', lineWidth: 3}); drawLandmarks(canvasCtx, lm, {color: '#bc13fe', lineWidth: 1, radius: 3}); let progressFill = document.getElementById("progress-fill"); if (userData.goal === 'legs') { // SQUAT LOGICA let leftKnee = calculateAngle(lm[23], lm[25], lm[27]); let rightKnee = calculateAngle(lm[24], lm[26], lm[28]); let avgKneeAngle = (leftKnee + rightKnee) / 2; let hipY = (lm[23].y + lm[24].y) / 2; // Dynamische kalibratie: als je recht staat, update initialHipY if (avgKneeAngle > 170) initialHipY = hipY; // Vul de meter op basis van diepte (170 graden = 0%, 115 graden = 100%) let depth = (170 - avgKneeAngle) / 55; let visualPercent = Math.min(Math.max(depth * 100, 0), 100); progressFill.style.height = visualPercent + "%"; progressFill.style.backgroundColor = visualPercent > 85 ? "var(--neon-green)" : "var(--neon-blue)"; // Check heupverplaatsing (moet minstens een beetje zakken) let isLowering = initialHipY !== null && hipY > (initialHipY + 0.05); if (avgKneeAngle < 120 && isLowering) status = "down"; if (avgKneeAngle > 160 && status === "down") { status = "up"; countRep(); } } else { // PUSH-UP LOGICA let shoulderAngle = calculateAngle(lm[12], lm[14], lm[16]); let pushDepth = (160 - shoulderAngle) / 70; progressFill.style.height = Math.min(Math.max(pushDepth * 100, 0), 100) + "%"; if (shoulderAngle < 100) status = "down"; if (shoulderAngle > 150 && status === "down") { status = "up"; countRep(); } } } canvasCtx.restore(); } function countRep() { reps++; document.getElementById("rep-display").innerText = ${reps}/12; speak(reps.toString()); if (reps >= 12) handleSetCompletion(); } function handleSetCompletion() { if (currentSet >= maxSets) { speak("Workout voltooid."); setTimeout(() => location.reload(), 2000); } else { isResting = true; initialHipY = null; document.getElementById("rest-overlay").style.display = "flex"; let t = 30; let timer = setInterval(() => { t--; document.getElementById("rest-timer").innerText = t; if(t <= 0) { clearInterval(timer); isResting = false; document.getElementById("rest-overlay").style.display = "none"; reps = 0; currentSet++; document.getElementById("set-display").innerText = ${currentSet}/3; document.getElementById("rep-display").innerText = 0/12; speak("Volgende set."); } }, 1000); } } // Start app const saved = localStorage.getItem("fitnessProFinal"); if (saved) { userData = JSON.parse(saved); showHome(); } else { renderStep(); } </script> </body> </html>
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Smart-Fitness-Mathijs</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Montserrat:wght@700;900&display=swap" rel="stylesheet">
+
+    <!-- FIREBASE -->
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-firestore-compat.js"></script>
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyBvkD1TvkjjMci5Re2uzY61yqJI_FcthnU",
+            authDomain: "smart-fitness-mathijs.firebaseapp.com",
+            projectId: "smart-fitness-mathijs",
+            storageBucket: "smart-fitness-mathijs.firebasestorage.app",
+            messagingSenderId: "123911579168",
+            appId: "1:123911579168:web:c6fcb8a2f380157b0fbe45"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db   = firebase.firestore();
+    </script>
+
+    <style>
+        /* ── THEMA VARIABELEN ── */
+        :root {
+            --bg: #1b2025; --surface: #121212; --surface-2: #1e1e1e;
+            --accent: #fff; --sub: #888; --blue: #007aff; --orange: #ff9500;
+            --green: #34c759; --red: #ff3b30; --gold: #ffd700;
+            --card-border: #222; --nav-bg: rgba(16,52,84,1);
+        }
+        body.light-mode {
+            --bg: #f0f2f5; --surface: #ffffff; --surface-2: #e8eaed;
+            --accent: #111; --sub: #666; --card-border: #ddd;
+            --nav-bg: rgba(255,255,255,0.97);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--accent); user-select: none; -webkit-user-select: none; transition: background 0.3s, color 0.3s; }
+
+        .screen { min-height: 100vh; padding: 30px 20px 120px; display: flex; flex-direction: column; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
+        .hidden { display: none !important; }
+
+        /* ── TAB WISSEL ANIMATIE ── */
+        @keyframes slideInTab { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: translateX(0); } }
+        .screen-enter { animation: slideInTab 0.28s cubic-bezier(0.4,0,0.2,1) both; }
+
+        h1 { font-family: 'Montserrat', sans-serif; font-size: 26px; font-weight: 900; text-transform: uppercase; margin: 0 0 5px; letter-spacing: -0.5px; }
+        .subtitle { color: var(--sub); font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 25px; font-weight: 700; }
+
+        /* ── MOOIERE ONBOARDING ── */
+        .q-box { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding-bottom: 100px; }
+        .q-card { background: var(--surface); border-radius: 28px; padding: 32px 24px 28px; max-width: 340px; width: 100%; border: 1px solid var(--card-border); box-shadow: 0 8px 40px rgba(0,0,0,0.4); }
+        .q-icon { font-size: 56px; margin-bottom: 16px; display: block; }
+        .q-title { font-family: 'Montserrat', sans-serif; font-size: 20px; font-weight: 900; margin-bottom: 8px; line-height: 1.2; }
+        .q-hint { color: var(--sub); font-size: 12px; margin-bottom: 22px; line-height: 1.6; min-height: 36px; }
+        @keyframes qSlideIn { from { opacity: 0; transform: translateY(16px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        .q-card { animation: qSlideIn 0.3s cubic-bezier(0.4,0,0.2,1) both; }
+
+        input, select { width: 100%; max-width: 320px; padding: 16px; border-radius: 12px; border: 1px solid var(--card-border); background: var(--surface-2); color: var(--accent); font-size: 16px; margin-bottom: 12px; outline: none; transition: 0.2s; }
+        input:focus { border-color: var(--blue); box-shadow: 0 0 15px rgba(0,122,255,0.3); }
+
+        .btn { background: var(--accent); color: var(--bg); border: none; padding: 18px; border-radius: 16px; width: 100%; max-width: 320px; font-weight: 800; text-transform: uppercase; cursor: pointer; transition: transform 0.1s; box-shadow: 0 4px 15px rgba(255,255,255,0.1); font-size: 14px; }
+        .btn:active { transform: scale(0.98); }
+        .btn-small { padding: 10px 15px; font-size: 11px; font-weight: 700; background: var(--surface-2); color: var(--accent); border: 1px solid var(--card-border); border-radius: 8px; cursor: pointer; }
+
+        .card { background: var(--surface); border-radius: 24px; padding: 20px; margin-bottom: 15px; border: 1px solid var(--card-border); position: relative; overflow: hidden; transition: background 0.3s; }
+
+        .streak-badge { background: rgba(255,149,0,0.15); color: var(--orange); padding: 8px 16px; border-radius: 100px; font-weight: 800; font-size: 13px; display: inline-flex; align-items: center; gap: 8px; margin-bottom: 20px; border: 1px solid rgba(255,149,0,0.3); }
+        .rank-badge { background: rgba(0,122,255,0.15); color: var(--blue); padding: 5px 10px; border-radius: 6px; font-size: 10px; font-weight: 800; text-transform: uppercase; }
+
+        .hud { position: absolute; top: 0; width: 100%; padding: 20px 20px 40px; display: flex; justify-content: space-between; background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent); z-index: 2001; pointer-events: none; }
+        .hud-val span { display: block; font-size: 9px; color: var(--sub); font-weight: 700; letter-spacing: 1px; }
+        .hud-val strong { font-size: 24px; font-family: 'Montserrat', sans-serif; text-shadow: 0 2px 10px rgba(0,0,0,1); }
+
+        #coaching-tip { position: absolute; bottom: 130px; left: 0; width: 100%; text-align: center; color: var(--accent); font-weight: 900; font-size: 20px; text-shadow: 0 4px 12px rgba(0,0,0,1); z-index: 2002; pointer-events: none; }
+
+        #rest-overlay { position: absolute; inset: 0; background: rgba(5,5,5,0.98); z-index: 3000; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px; }
+        .timer-txt { font-size: 90px; font-weight: 900; color: var(--blue); font-family: 'Montserrat', sans-serif; margin: 10px 0; line-height: 1; letter-spacing: -3px; }
+
+        #lvl-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 4000; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; pointer-events: none; opacity: 0; transition: 0.4s; }
+        #lvl-overlay.active { opacity: 1; pointer-events: auto; }
+        @keyframes popIn { 0% { transform: scale(0.5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        .lvl-anim { animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+
+        .float-txt { position: fixed; font-weight: 900; font-size: 16px; color: var(--gold); pointer-events: none; animation: floatUp 1.5s ease-out forwards; z-index: 5000; text-shadow: 0 2px 4px rgba(0,0,0,0.8); }
+        @keyframes floatUp { 0% { transform: translateY(0) scale(1); opacity: 1; } 100% { transform: translateY(-80px) scale(1.2); opacity: 0; } }
+
+        .navbar { position: fixed; bottom: 0; left: 0; width: 100%; background: var(--nav-bg); border-top: 1px solid var(--card-border); display: flex; justify-content: space-around; padding: 15px 0; padding-bottom: calc(15px + env(safe-area-inset-bottom)); z-index: 1000; backdrop-filter: blur(10px); }
+        .nav-item { color: var(--sub); font-size: 9px; font-weight: 700; cursor: pointer; text-align: center; text-transform: uppercase; transition: 0.2s; }
+        .nav-item.active { color: var(--accent); transform: translateY(-2px); }
+        .nav-item i { display: block; font-size: 20px; margin-bottom: 4px; font-style: normal; }
+
+        #output_canvas { width: 100%; height: 100%; object-fit: contain; transform: scaleX(-1); background: #000; display: block; }
+
+        .stat-row { margin-bottom: 12px; }
+        .stat-header { display: flex; justify-content: space-between; font-size: 11px; font-weight: 700; margin-bottom: 6px; }
+        .bar-bg { background: #222; height: 10px; border-radius: 5px; overflow: hidden; }
+        .bar-fill { height: 100%; background: var(--blue); transition: width 0.6s ease; box-shadow: 0 0 10px rgba(0,122,255,0.5); }
+
+        .badges-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 15px; }
+        .badge-item { background: #1a1a1a; padding: 15px 5px; border-radius: 12px; text-align: center; opacity: 0.4; filter: grayscale(1); transition: 0.3s; border: 1px solid transparent; }
+        .badge-item.unlocked { opacity: 1; filter: grayscale(0); border-color: var(--gold); background: rgba(255,215,0,0.05); }
+        .badge-icon { font-size: 24px; display: block; margin-bottom: 5px; }
+        .badge-name { font-size: 9px; font-weight: 700; text-transform: uppercase; }
+
+        .feedback-good { color: var(--green) !important; }
+        .feedback-warn { color: var(--orange) !important; }
+
+        .friend-card { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: var(--surface-2); border-radius: 12px; margin-bottom: 8px; }
+        .leaderboard-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--card-border); }
+        .leaderboard-row:last-child { border-bottom: none; }
+        .leaderboard-num { font-family: 'Montserrat', sans-serif; font-size: 20px; font-weight: 900; color: var(--blue); }
+        .gold-border { border-left: 4px solid var(--gold) !important; padding-left: 12px; }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spinner { width: 30px; height: 30px; border: 3px solid #333; border-top-color: var(--blue); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 20px auto; }
+
+        /* ── AUTH TOGGLE ── */
+        .auth-tab { padding: 10px 24px; border-radius: 10px; font-weight: 700; font-size: 13px; cursor: pointer; border: none; background: transparent; color: var(--sub); transition: 0.2s; }
+        .auth-tab.active { background: var(--blue); color: #fff; }
+
+        /* ── FOTO GRID ── */
+        .photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
+        .photo-thumb { aspect-ratio: 1; border-radius: 8px; object-fit: cover; width: 100%; }
+
+        /* ── VOICE BUTTON ── */
+        #voice-btn { position: absolute; top: 80px; right: 15px; z-index: 2003; background: rgba(0,0,0,0.6); border: 2px solid #555; border-radius: 50%; width: 44px; height: 44px; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        #voice-btn.active { border-color: var(--green); background: rgba(52,199,89,0.2); }
+
+        /* ── PDF PRINT ── */
+        @media print {
+            body * { visibility: hidden; }
+            #print-area, #print-area * { visibility: visible; }
+            #print-area { position: fixed; inset: 0; padding: 30px; background: white; color: black; font-family: Arial, sans-serif; }
+        }
+
+        /* ── TOAST NOTIFICATIE ── */
+        @keyframes toastIn { from { opacity: 0; transform: translate(-50%, -12px); } to { opacity: 1; transform: translate(-50%, 0); } }
+        @keyframes toastOut { from { opacity: 1; transform: translate(-50%, 0); } to { opacity: 0; transform: translate(-50%, -12px); } }
+
+        /* ── WATER GLASSES ── */
+        .water-glass { font-size: 22px; cursor: pointer; transition: transform 0.15s; display: inline-block; line-height: 1.3; }
+        .water-glass:active { transform: scale(1.3); }
+
+        /* ── BADGE OVERLAY ── */
+        #badge-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.93); z-index: 6000; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 30px; pointer-events: none; opacity: 0; transition: opacity 0.35s; }
+        #badge-overlay.active { opacity: 1; pointer-events: auto; }
+        @keyframes badgePop { 0% { transform: scale(0.3) rotate(-15deg); opacity: 0; } 65% { transform: scale(1.25) rotate(5deg); } 100% { transform: scale(1) rotate(0deg); opacity: 1; } }
+        #badge-overlay-icon { display: block; animation: badgePop 0.65s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+        @keyframes shimmer { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
+        .badge-stars { animation: shimmer 1.5s ease infinite; }
+
+        /* ── WORKOUT SAMENVATTING ── */
+        #summary-overlay { position: fixed; inset: 0; background: rgba(5,5,5,0.98); z-index: 5500; display: none; flex-direction: column; align-items: center; justify-content: flex-start; padding: 30px 20px 120px; overflow-y: auto; }
+        .summary-stat { text-align: center; }
+        .summary-stat .val { font-size: 32px; font-weight: 900; font-family: 'Montserrat', sans-serif; line-height: 1; }
+        .summary-stat .lbl { font-size: 9px; color: var(--sub); font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+
+        /* ── GEWICHTS GRAFIEK ── */
+        #weight-chart { display: none; width: 100%; height: 170px; border-radius: 10px; }
+
+        /* ── ONBOARDING PROGRESS DOTS ── */
+        .dot-step { height: 6px; border-radius: 3px; transition: all 0.35s cubic-bezier(0.4,0,0.2,1); }
+    </style>
+</head>
+<body>
+
+<!-- ── LOGIN SCHERM ── -->
+<div id="scr-auth" class="screen hidden">
+    <div class="q-box">
+        <div style="font-size:52px;margin-bottom:12px;">💪</div>
+        <h1 style="margin-bottom:16px;">Smart Fitness</h1>
+        <div style="display:flex;gap:4px;background:var(--surface-2);padding:4px;border-radius:14px;margin-bottom:20px;">
+            <button class="auth-tab active" id="tab-login"  onclick="switchAuthMode('login')">Inloggen</button>
+            <button class="auth-tab"        id="tab-signup" onclick="switchAuthMode('signup')">Account aanmaken</button>
+        </div>
+        <input type="email"    id="auth-email" placeholder="E-mailadres"  autocomplete="email">
+        <input type="password" id="auth-pass"  placeholder="Wachtwoord"   autocomplete="current-password">
+        <button class="btn" id="auth-main-btn" onclick="authLogin()" style="margin-bottom:10px;">INLOGGEN</button>
+        <div id="auth-error" style="font-size:12px;margin-top:8px;text-align:center;min-height:36px;line-height:1.5;max-width:300px;"></div>
+    </div>
+</div>
+
+<!-- ── ONBOARDING ── -->
+<div id="scr-onboarding" class="screen hidden">
+    <div class="q-box" id="q-container"></div>
+    <div style="position:fixed;bottom:0;left:0;width:100%;padding:20px 20px calc(20px + env(safe-area-inset-bottom));background:rgba(18,18,18,0.97);backdrop-filter:blur(12px);border-top:1px solid #222;z-index:999;">
+        <div style="display:flex;justify-content:space-between;font-size:10px;font-weight:700;color:var(--sub);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px;">
+            <span id="q-progress-label">Vraag 1 van 10</span>
+            <span id="q-progress-pct" style="color:var(--blue);">0%</span>
+        </div>
+        <!-- progress bar -->
+        <div style="background:#2a2a2a;height:8px;border-radius:4px;overflow:hidden;box-shadow:inset 0 1px 3px rgba(0,0,0,0.4);">
+            <div id="q-progress-bar" style="height:100%;background:linear-gradient(90deg,var(--blue),#5ac8fa);border-radius:4px;transition:width 0.45s cubic-bezier(0.4,0,0.2,1);box-shadow:0 0 12px rgba(0,122,255,0.6);width:0%;"></div>
+        </div>
+        <div style="display:flex;justify-content:center;gap:5px;margin-top:10px;" id="q-dots"></div>
+    </div>
+</div>
+
+<!-- ── DASHBOARD ── -->
+<div id="scr-dash" class="screen hidden">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div class="streak-badge">🔥 <span id="streak-val">0</span></div>
+        <div id="rank-display" class="rank-badge">ROOKIE</div>
+    </div>
+    <h1 id="dash-greet">HEY!</h1>
+    <div class="subtitle">Tijd om te beginnen!</div>
+
+    <!-- Calorie balk -->
+    <div class="card" id="calorie-card" style="border-left:4px solid var(--orange);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <strong style="font-size:13px;">🔥 Calorieën vandaag</strong>
+            <span id="cal-pct" style="font-size:11px;color:var(--sub);">0 / 0 kcal</span>
+        </div>
+        <div class="bar-bg"><div id="cal-bar" class="bar-fill" style="width:0%;background:var(--orange);"></div></div>
+        <div style="display:flex;gap:8px;margin-top:10px;align-items:center;">
+            <input type="number" id="cal-input" placeholder="Voeg kcal toe..." style="flex:1;margin:0;padding:10px;font-size:13px;">
+            <button class="btn-small" onclick="addCalories()" style="background:var(--orange);border:none;color:#fff;">+</button>
+            <button class="btn-small" onclick="resetCalories()" style="font-size:10px;">Reset</button>
+        </div>
+    </div>
+
+    <!-- Water Tracker -->
+    <div class="card" style="border-left:4px solid var(--blue);">
+        <div id="water-card-content"></div>
+    </div>
+
+    <!-- Gepersonaliseerde workout -->
+    <div id="personal-workout-card" class="card" style="border-left:4px solid var(--gold);cursor:pointer;" onclick="startPersonalWorkout()">
+        <strong style="color:var(--gold);">⭐ Jouw Persoonlijke Workout</strong>
+        <div id="personal-workout-desc" style="color:var(--sub);font-size:11px;margin-top:5px;">Op basis van jouw profiel</div>
+        <div style="margin-top:10px;font-size:10px;font-weight:700;color:var(--gold);">AANBEVOLEN VOOR JOU ▶</div>
+    </div>
+
+    <div class="card" onclick="startCircuit('Upper')" style="cursor:pointer;">
+        <strong>Boven lichaam</strong>
+        <div style="color:var(--sub);font-size:11px;margin-top:5px;">Borst, Armen & Schouders</div>
+        <div style="margin-top:10px;font-size:10px;font-weight:700;color:var(--blue);">Krachttraining</div>
+    </div>
+    <div class="card" onclick="startCircuit('Lower')" style="cursor:pointer;">
+        <strong>Benen</strong>
+        <div style="color:var(--sub);font-size:11px;margin-top:5px;">Benen, Billen & Kuiten</div>
+        <div style="margin-top:10px;font-size:10px;font-weight:700;color:var(--blue);">Krachttraining</div>
+    </div>
+    <div class="card" onclick="startCircuit('Conditie')" style="cursor:pointer;">
+        <strong>Conditie & Abs</strong>
+        <div style="color:var(--sub);font-size:11px;margin-top:5px;">Vetverbranding & Core</div>
+        <div style="margin-top:10px;font-size:10px;font-weight:700;color:var(--blue);">Vetverbranding + core</div>
+    </div>
+</div>
+
+<!-- ── ANALYSE ── -->
+<div id="scr-analyse" class="screen hidden">
+    <h1>Analyseer je training</h1>
+    <div class="subtitle">Verbeter je oefeningen</div>
+    <div class="card" onclick="showAnalysisReport()" style="border-left:4px solid var(--blue);cursor:pointer;">
+        <strong>Jouw Houding Rapport</strong>
+        <div style="color:var(--sub);font-size:11px;margin-top:5px;">Bekijk hoe goed je laatste training was.</div>
+        <div style="margin-top:10px;font-size:10px;font-weight:700;color:var(--blue);">KLIK VOOR ANALYSE</div>
+    </div>
+    <button class="btn" onclick="printReport()" style="background:var(--surface-2);color:var(--accent);border:1px solid var(--card-border);margin-top:4px;">
+        📄 Download rapport als PDF
+    </button>
+    <div id="print-area" style="display:none;"></div>
+</div>
+
+<!-- ── STATS ── -->
+<div id="scr-progress" class="screen hidden">
+    <h1>JOUW STATS</h1>
+    <div class="subtitle">RPG Progressie & Badges</div>
+    <div class="card">
+        <h3 style="font-size:14px;margin:0 0 15px;">SPIER LEVELS</h3>
+        <div id="stats-render"></div>
+    </div>
+
+    <!-- Gewichtsverloop grafiek -->
+    <div class="card" style="border-left:4px solid var(--green);">
+        <h3 style="font-size:14px;margin:0 0 12px;">⚖️ GEWICHTSVERLOOP</h3>
+        <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;">
+            <input type="number" id="weight-log-input" placeholder="Gewicht (kg)" step="0.1" style="flex:1;margin:0;padding:10px;font-size:13px;">
+            <button class="btn-small" onclick="logWeight()" style="background:var(--green);border:none;color:#fff;white-space:nowrap;padding:10px 14px;">LOG KG</button>
+        </div>
+        <canvas id="weight-chart"></canvas>
+        <div id="weight-chart-empty" style="color:var(--sub);font-size:12px;text-align:center;padding:16px 0;">Log minstens 2 metingen om de grafiek te zien.</div>
+        <div id="weight-goal-display" style="display:none;margin-top:10px;font-size:11px;text-align:center;color:var(--green);font-weight:700;"></div>
+    </div>
+
+    <div class="card">
+        <h3 style="font-size:14px;margin:0 0 10px;">BADGE COLLECTIE</h3>
+        <div class="badges-grid" id="badges-render"></div>
+    </div>
+    <div class="card">
+        <h3 style="font-size:14px;margin:0 0 10px;">RECENTE HISTORY</h3>
+        <div id="history-render" style="font-size:11px;color:var(--sub);">Nog geen workouts.</div>
+    </div>
+</div>
+
+<!-- ── SOCIAAL ── -->
+<div id="scr-social" class="screen hidden">
+    <h1>COMMUNITY</h1>
+    <div class="subtitle">Vrienden & Groepen</div>
+    <div class="card" id="requests-card" style="display:none;">
+        <strong style="font-size:12px;display:block;margin-bottom:10px;color:var(--orange);">🔔 Meldingen</strong>
+        <div id="requests-list"></div>
+    </div>
+    <div class="card">
+        <strong style="font-size:12px;display:block;margin-bottom:10px;color:var(--blue);">🔍 Vriend zoeken</strong>
+        <div style="display:flex;gap:8px;">
+            <input type="text" id="search-input" placeholder="Zoek op naam..." style="flex:1;margin-bottom:0;">
+            <button class="btn-small" onclick="searchFriend()" style="background:var(--blue);border:none;color:#fff;white-space:nowrap;">ZOEK</button>
+        </div>
+        <div id="search-results" style="margin-top:12px;"></div>
+    </div>
+    <div class="card">
+        <strong style="font-size:12px;display:block;margin-bottom:10px;">👥 Mijn vrienden</strong>
+        <div id="friends-list"><div style="color:var(--sub);font-size:12px;">Nog geen vrienden toegevoegd.</div></div>
+    </div>
+    <div class="card">
+        <strong style="font-size:12px;display:block;margin-bottom:10px;">🏆 Groep</strong>
+        <input type="text" id="group-name-input" placeholder="Groepsnaam (bijv: Klas6iict)..." style="margin-bottom:8px;">
+        <div style="display:flex;gap:8px;">
+            <button class="btn" onclick="createGroup()" style="flex:1;height:44px;padding:0;background:var(--blue);color:#fff;">MAAK GROEP</button>
+            <button class="btn" onclick="joinGroup()"   style="flex:1;height:44px;padding:0;background:var(--surface-2);color:var(--accent);border:1px solid var(--card-border);">Join groep</button>
+        </div>
+    </div>
+    <div id="leaderboard-container"></div>
+    <button class="btn-small" onclick="authLogout()" style="width:100%;padding:14px;margin-top:4px;background:#220000;border-color:#500;color:#f55;">Uitloggen</button>
+</div>
+
+<!-- ── PROFIEL ── -->
+<div id="scr-profile" class="screen hidden">
+    <h1>PROFIEL</h1>
+    <div class="subtitle">Jouw instellingen</div>
+
+    <!-- Dark/Light mode toggle -->
+    <div class="card" style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+            <strong style="font-size:13px;" id="theme-label">🌙 Donker thema</strong>
+            <div style="color:var(--sub);font-size:11px;margin-top:3px;">Wissel kleurenschema</div>
+        </div>
+        <div id="theme-toggle" onclick="toggleTheme()" style="width:48px;height:28px;background:#333;border-radius:14px;cursor:pointer;position:relative;transition:0.3s;">
+            <div id="theme-knob" style="width:22px;height:22px;background:#fff;border-radius:50%;position:absolute;top:3px;left:3px;transition:0.3s;"></div>
+        </div>
+    </div>
+
+    <!-- Meldingen -->
+    <div class="card" style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+            <strong style="font-size:13px;">🔔 Push Meldingen</strong>
+            <div style="color:var(--sub);font-size:11px;margin-top:3px;">Streak alerts & trainingsherinneringen</div>
+        </div>
+        <button class="btn-small" id="notif-btn" onclick="requestNotifications()" style="background:var(--blue);border:none;color:#fff;white-space:nowrap;">Inschakelen</button>
+    </div>
+
+    <!-- Profielgegevens -->
+    <div class="card" id="profile-fields"></div>
+
+    <!-- Voortgangsfoto's -->
+    <div class="card">
+        <strong style="font-size:13px;display:block;margin-bottom:10px;">📸 Voortgangsfoto's</strong>
+        <div style="color:var(--sub);font-size:11px;margin-bottom:12px;">Sla wekelijks een foto op om je transformatie te volgen.</div>
+        <input type="file" id="photo-input" accept="image/*" capture="user" style="display:none;" onchange="savePhoto(this)">
+        <button class="btn-small" onclick="document.getElementById('photo-input').click()" style="width:100%;padding:12px;background:var(--blue);border:none;color:#fff;margin-bottom:10px;">
+            📷 Foto maken / uploaden
+        </button>
+        <div class="photo-grid" id="photo-grid"></div>
+    </div>
+
+    <!-- Reset -->
+    <button class="btn-small" style="width:100%;padding:15px;margin:20px 0;background:#220000;border-color:#500;color:#f55;" onclick="resetData()">Reset alle data</button>
+</div>
+
+<!-- ── WORKOUT ── -->
+<div id="scr-workout" class="screen hidden" style="padding:0;z-index:2000;background:#000;position:relative;">
+    <video id="input_video" style="display:none;"></video>
+    <canvas id="output_canvas"></canvas>
+    <div id="coaching-tip">START POSITIE...</div>
+    <button id="voice-btn" onclick="toggleVoice()" title="Stem commando's">🎤</button>
+    <div id="rest-overlay" class="hidden">
+        <div id="rest-title" class="subtitle">RUST</div>
+        <div id="rest-exe" style="font-size:28px;font-weight:900;margin-bottom:5px;"></div>
+        <div class="timer-txt" id="timer-val">30</div>
+        <div style="display:flex;gap:10px;margin-top:10px;">
+            <button class="btn-small" onclick="adjustTime(10)">+10s</button>
+            <button class="btn-small" style="background:var(--blue);border-color:var(--blue);" onclick="skipRest()">Start nu</button>
+        </div>
+        <div id="rest-instr" style="color:#ccc;font-size:13px;max-width:300px;margin-top:20px;line-height:1.6;font-weight:400;"></div>
+        <button id="tutorial-btn" onclick="openTutorial()" style="margin-top:15px;background:rgba(255,59,48,0.8);border:none;color:#fff;padding:10px 20px;border-radius:10px;font-weight:700;font-size:12px;cursor:pointer;">
+            ▶ YouTube tutorial
+        </button>
+        <div style="position:absolute;bottom:40px;font-size:10px;color:var(--sub);">💡 Zorg dat je volledig in beeld staat.</div>
+    </div>
+    <div class="hud">
+        <div class="hud-val"><span>Oefening</span><strong id="hud-idx">1/6</strong></div>
+        <div class="hud-val"><span>Set</span><strong id="hud-set">1/3</strong></div>
+        <div class="hud-val"><span>Reps</span><strong id="hud-reps">0/10</strong></div>
+    </div>
+    <button class="btn" style="position:absolute;bottom:30px;left:50%;transform:translateX(-50%);width:60%;height:50px;padding:0;z-index:2001;background:rgba(255,59,48,0.2);border:1px solid rgba(255,59,48,0.5);color:#fff;font-size:12px;" onclick="stopWorkout()">STOPPEN</button>
+</div>
+
+<!-- ── OVERLAYS ── -->
+<div id="lvl-overlay">
+    <div class="lvl-anim" style="text-align:center;">
+        <div style="font-size:60px;margin-bottom:10px;">🆙</div>
+        <h1 style="font-size:32px;color:var(--gold);">LEVEL UP!</h1>
+        <h2 id="lvl-msg" style="font-size:18px;color:#fff;margin:10px 0 30px;font-weight:400;"></h2>
+        <button class="btn" onclick="closeLvl()">DOORGAAN</button>
+    </div>
+</div>
+
+<div id="report-overlay" style="position:fixed;inset:0;background:rgba(5,5,5,0.98);z-index:5000;display:none;flex-direction:column;align-items:center;justify-content:center;padding:20px;overflow-y:auto;">
+    <div class="card" style="width:85%;max-width:400px;text-align:center;border:1px solid var(--blue);">
+        <h1 style="color:var(--blue);font-size:20px;">TRAININGS RAPPORT</h1>
+        <div class="subtitle">NET VOLTOOID</div>
+        <div id="report-score" style="font-size:64px;font-weight:900;margin:10px 0;font-family:'Montserrat',sans-serif;">0%</div>
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:2px;color:var(--sub);margin-bottom:20px;">Houding Score</div>
+        <div style="text-align:left;background:rgba(255,255,255,0.03);padding:15px;border-radius:12px;margin-bottom:20px;">
+            <strong style="font-size:12px;color:var(--blue);display:block;margin-bottom:5px;">COACH FEEDBACK:</strong>
+            <p id="report-feedback-text" style="font-size:13px;line-height:1.5;color:#eee;margin:0;"></p>
+        </div>
+        <div class="stat-row">
+            <div class="stat-header"><span>PRECISIE</span><span id="precision-val">0%</span></div>
+            <div class="bar-bg"><div id="precision-bar" class="bar-fill" style="width:0%"></div></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:20px;">
+            <button class="btn" onclick="closeReport()" style="flex:1;background:var(--blue);color:white;">DOORGAAN</button>
+            <button class="btn" onclick="printReport()" style="flex:1;background:var(--surface-2);color:var(--accent);border:1px solid var(--card-border);font-size:11px;">📄 PDF</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── WORKOUT SAMENVATTING ── -->
+<div id="summary-overlay">
+    <div style="text-align:center;margin-bottom:25px;">
+        <div style="font-size:64px;margin-bottom:12px;">🎉</div>
+        <h1 style="font-family:'Montserrat',sans-serif;color:var(--gold);font-size:28px;">WORKOUT KLAAR!</h1>
+        <div class="subtitle" style="margin-bottom:0;">Bekijk je resultaten</div>
+    </div>
+    <div id="summary-content" style="width:100%;max-width:420px;"></div>
+    <button class="btn" onclick="closeSummary()" style="margin-top:20px;width:100%;max-width:420px;background:var(--blue);color:#fff;">DOORGAAN →</button>
+</div>
+
+<!-- ── BADGE OVERLAY ── -->
+<div id="badge-overlay">
+    <div style="text-align:center;">
+        <div class="badge-stars" style="font-size:18px;letter-spacing:4px;margin-bottom:10px;color:var(--gold);">★ ★ ★</div>
+        <div id="badge-overlay-icon" style="font-size:88px;display:block;margin-bottom:16px;"></div>
+        <div style="color:var(--gold);font-size:11px;font-weight:800;letter-spacing:3px;text-transform:uppercase;margin-bottom:8px;">Badge Unlocked!</div>
+        <h2 id="badge-overlay-name" style="font-size:28px;font-family:'Montserrat',sans-serif;color:var(--accent);margin-bottom:6px;"></h2>
+        <div id="badge-overlay-desc" style="color:var(--sub);font-size:12px;margin-bottom:28px;"></div>
+        <button class="btn" onclick="closeBadgeOverlay()" style="background:var(--gold);color:#000;max-width:240px;">GEWELDIG! 🙌</button>
+    </div>
+</div>
+
+<!-- ── NAVBAR ── -->
+<nav class="navbar hidden" id="nav">
+    <div class="nav-item active" onclick="tab('dash',this)"><i>🏠</i>Training</div>
+    <div class="nav-item" onclick="tab('analyse',this)"><i>📈</i>Analyse</div>
+    <div class="nav-item" onclick="tab('progress',this)"><i>📊</i>Stats</div>
+    <div class="nav-item" onclick="tab('social',this)"><i>👥</i>Sociaal</div>
+    <div class="nav-item" onclick="tab('profile',this)"><i>👤</i>Profiel</div>
+</nav>
+
+<script>
+// ============================================================
+// DATA
+// ============================================================
+const DEFAULT_USER = {
+    name:'', age:'', gender:'', height:'', weight:'', goal:'', reps:10, availability:'',
+    targetWeight:'', targetWeeks:'',
+    streak:0, lastDate:null, totalWorkouts:0, lastAnalysisScore:0,
+    badges:[], history:[], friends:[], currentGroupId:null,
+    caloriesGoal:2000, caloriesToday:0, caloriesDate:'',
+    waterToday:0, waterDate:'',
+    weightHistory:[],
+    stats:{
+        Borst:{xp:0,lvl:1}, Schouders:{xp:0,lvl:1}, Triceps:{xp:0,lvl:1},
+        Abs:{xp:0,lvl:1}, Rug:{xp:0,lvl:1}, Benen:{xp:0,lvl:1},
+        Billen:{xp:0,lvl:1}, Kuiten:{xp:0,lvl:1}
+    }
+};
+
+let user = JSON.parse(JSON.stringify(DEFAULT_USER));
+
+// ============================================================
+// SAVE / LOAD
+// ============================================================
+function save() {
+    localStorage.setItem('smartfitness_v1', JSON.stringify(user));
+    const u = auth.currentUser;
+    if (u) {
+        const dataToSave = { ...user, nameSearch: (user.name || '').toLowerCase() };
+        db.collection('users').doc(u.uid).set(dataToSave).catch(e => console.error('Save fout:', e));
+    }
+}
+
+function load() {
+    const d = localStorage.getItem('smartfitness_v1');
+    if (d) { try { user = JSON.parse(d); return true; } catch(e) {} }
+    return false;
+}
+
+function resetData() {
+    if (!confirm('Alle data wissen?')) return;
+    localStorage.removeItem('smartfitness_v1');
+    localStorage.removeItem('smartfitness_photos');
+    auth.signOut().then(() => location.reload());
+}
+
+// ============================================================
+// TOAST MELDINGEN
+// ============================================================
+function showToast(msg, type = 'info') {
+    const colors = { info: 'var(--blue)', success: 'var(--green)', warning: 'var(--orange)', error: 'var(--red)' };
+    const existing = document.querySelector('.sf-toast');
+    if (existing) existing.remove();
+    const toast = document.createElement('div');
+    toast.className = 'sf-toast';
+    toast.style.cssText = `
+        position:fixed;top:20px;left:50%;transform:translate(-50%,0);
+        background:${colors[type]};color:#fff;padding:13px 22px;
+        border-radius:14px;font-weight:700;font-size:13px;z-index:9000;
+        box-shadow:0 6px 24px rgba(0,0,0,0.5);max-width:85%;text-align:center;
+        animation:toastIn 0.3s ease both;
+    `;
+    toast.innerText = msg;
+    document.body.appendChild(toast);
+    setTimeout(() => {
+        toast.style.animation = 'toastOut 0.3s ease both';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+// ============================================================
+// PUSH MELDINGEN
+// ============================================================
+async function requestNotifications() {
+    if (!('Notification' in window)) {
+        showToast('Push meldingen worden niet ondersteund op dit apparaat.', 'warning');
+        return;
+    }
+    if (Notification.permission === 'granted') {
+        showToast('✅ Meldingen zijn al ingeschakeld!', 'success');
+        updateNotifBtn();
+        return;
+    }
+    const permission = await Notification.requestPermission();
+    if (permission === 'granted') {
+        showToast('✅ Meldingen ingeschakeld!', 'success');
+        updateNotifBtn();
+        scheduleWorkoutReminder();
+        scheduleStreakNotification();
+        sendNotification('💪 Smart Fitness', 'Meldingen actief! Je krijgt dagelijkse trainingsherinneringen.');
+    } else {
+        showToast('Meldingen geweigerd. Pas de instellingen van je browser aan.', 'warning');
+    }
+}
+
+function sendNotification(title, body) {
+    if (Notification.permission !== 'granted') return;
+    try {
+        new Notification(title, { body, icon: 'https://mathijsdp.github.io/Smart-Fitness/favicon.ico' });
+    } catch(e) { console.warn('Notificatie fout:', e); }
+}
+
+function scheduleWorkoutReminder() {
+    if (Notification.permission !== 'granted') return;
+    const now = new Date();
+    const target = new Date();
+    target.setHours(18, 0, 0, 0);
+    if (now >= target) target.setDate(target.getDate() + 1);
+    const ms = target - now;
+    setTimeout(() => {
+        const today = new Date().toDateString();
+        if (user.lastDate !== today) {
+            sendNotification('⏰ Tijd om te trainen!', `Hey ${user.name || 'atleet'}! Je dagelijkse workout wacht. 💪`);
+        }
+        scheduleWorkoutReminder();
+    }, ms);
+}
+
+function scheduleStreakNotification() {
+    if (Notification.permission !== 'granted') return;
+    const now = new Date();
+    const target = new Date();
+    target.setHours(20, 30, 0, 0);
+    if (now >= target) target.setDate(target.getDate() + 1);
+    const ms = target - now;
+    setTimeout(() => {
+        const today = new Date().toDateString();
+        if (user.lastDate !== today && (user.streak || 0) > 0) {
+            sendNotification('🔥 Streak in gevaar!', `${user.name || 'Atleet'}, je ${user.streak}-daagse streak staat op het spel! Train vandaag nog.`);
+        }
+        scheduleStreakNotification();
+    }, ms);
+}
+
+function updateNotifBtn() {
+    const btn = document.getElementById('notif-btn');
+    if (!btn) return;
+    const granted = 'Notification' in window && Notification.permission === 'granted';
+    btn.innerText = granted ? '✓ Actief' : 'Inschakelen';
+    btn.style.background = granted ? 'var(--green)' : 'var(--blue)';
+}
+
+// ============================================================
+// FIREBASE AUTH
+// ============================================================
+let authMode = 'login';
+
+function switchAuthMode(mode) {
+    authMode = mode;
+    document.getElementById('auth-error').innerHTML = '';
+    document.getElementById('tab-login').classList.toggle('active', mode === 'login');
+    document.getElementById('tab-signup').classList.toggle('active', mode === 'signup');
+    document.getElementById('auth-main-btn').innerText = mode === 'login' ? 'INLOGGEN' : 'ACCOUNT AANMAKEN';
+    document.getElementById('auth-main-btn').onclick = mode === 'login' ? authLogin : authSignup;
+}
+
+async function authLogin() {
+    const email = document.getElementById('auth-email').value.trim();
+    const pass  = document.getElementById('auth-pass').value;
+    const errEl = document.getElementById('auth-error');
+    errEl.innerHTML = '';
+    if (!email || !pass) { errEl.innerHTML = '<span style="color:var(--red);">Vul e-mail en wachtwoord in!</span>'; return; }
+    try {
+        await auth.signInWithEmailAndPassword(email, pass);
+    } catch(e) {
+        const noAccount = e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential';
+        if (noAccount) {
+            errEl.innerHTML = `<span style="color:var(--red);">Geen account gevonden met dit e-mail.</span><br>
+                <span style="color:var(--sub);">Nog geen account? Druk op "<strong style="color:var(--blue);cursor:pointer;" onclick="switchAuthMode('signup')">Account aanmaken</strong>" hierboven!</span>`;
+        } else {
+            const msgs = {
+                'auth/wrong-password': '<span style="color:var(--red);">Wachtwoord is onjuist.</span>',
+                'auth/invalid-email':  '<span style="color:var(--red);">Ongeldig e-mailadres.</span>',
+            };
+            errEl.innerHTML = msgs[e.code] || `<span style="color:var(--red);">${e.message}</span>`;
+        }
+    }
+}
+
+async function authSignup() {
+    const email = document.getElementById('auth-email').value.trim();
+    const pass  = document.getElementById('auth-pass').value;
+    const errEl = document.getElementById('auth-error');
+    errEl.innerHTML = '';
+    if (!email || !pass) { errEl.innerHTML = '<span style="color:var(--red);">Vul e-mail en wachtwoord in!</span>'; return; }
+    if (pass.length < 6) { errEl.innerHTML = '<span style="color:var(--red);">Wachtwoord moet minstens 6 tekens zijn.</span>'; return; }
+    try {
+        const res = await auth.createUserWithEmailAndPassword(email, pass);
+        user.email = email;
+        await db.collection('users').doc(res.user.uid).set({ ...user, nameSearch: '' });
+        document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+        currentStep = 0;
+        document.getElementById('scr-onboarding').classList.remove('hidden');
+        renderQ();
+    } catch(e) {
+        const msgs = {
+            'auth/email-already-in-use': '<span style="color:var(--red);">Dit e-mail is al in gebruik. Probeer in te loggen!</span>',
+            'auth/weak-password':        '<span style="color:var(--red);">Wachtwoord te zwak (min. 6 tekens).</span>',
+            'auth/invalid-email':        '<span style="color:var(--red);">Ongeldig e-mailadres.</span>',
+        };
+        errEl.innerHTML = msgs[e.code] || `<span style="color:var(--red);">${e.message}</span>`;
+    }
+}
+
+function authLogout() {
+    if (!confirm('Wil je uitloggen?')) return;
+    auth.signOut().then(() => {
+        localStorage.removeItem('smartfitness_v1');
+        location.reload();
+    });
+}
+
+// ============================================================
+// OEFENINGEN
+// ============================================================
+const exercises = {
+    Upper: [
+        {n:"Push-up",         i:"Houd je lichaam recht. Borst naar de grond.",              focus:["Borst","Triceps","Schouders"]},
+        {n:"Shoulder Taps",   i:"Hoge plank. Tik schouders om en om aan.",                 focus:["Schouders","Abs"]},
+        {n:"Pike Push-up",    i:"Buig je armen in een omgekeerde V-positie.",              focus:["Schouders","Triceps"]},
+        {n:"Superman",        i:"Til armen en benen van de grond terwijl je op je buik ligt.", focus:["Rug","Schouders"]},
+        {n:"Diamond Push-up", i:"Push-up met handen dicht bij elkaar.",                    focus:["Triceps","Borst"]},
+        {n:"Plank",           i:"Houd je lichaam recht op je onderarmen.",                 focus:["Abs","Schouders"]}
+    ],
+    Lower: [
+        {n:"Squat",                i:"Billen naar achteren, knieën niet voorbij tenen.",        focus:["Benen","Billen"]},
+        {n:"Lunge",                i:"Stap naar voren en zak door je knieën.",                  focus:["Benen","Billen"]},
+        {n:"Bulgarian Split Squat",i:"Achterste voet op een stoel, zak door je knie.",          focus:["Billen","Rug"]},
+        {n:"Side Lunges",          i:"Stap opzij, één been buigen, ander recht.",               focus:["Benen","Billen"]},
+        {n:"Calf Raise",           i:"Op tenen staan en rustig zakken.",                        focus:["Kuiten"]},
+        {n:"High Knees",           i:"Rennen op de plaats, knieën hoog.",                       focus:["Benen","Abs"]}
+    ],
+    Conditie: [
+        {n:"Jumping Jacks",    i:"Spring wijd, armen omhoog.",                    focus:["Benen","Schouders"]},
+        {n:"Burpees",          i:"Squat, plank, terugspringen, sprong omhoog.",   focus:["Borst","Benen","Abs"]},
+        {n:"Mountain Climbers",i:"Plank positie, knieën snel naar borst.",        focus:["Abs","Schouders"]},
+        {n:"Skater Jumps",     i:"Spring zijwaarts van been naar been.",           focus:["Benen","Billen"]},
+        {n:"Plank",            i:"Op ellebogen. Lichaam recht als een plank.",    focus:["Abs","Rug"]},
+        {n:"Crunches",         i:"Schouders van grond, kijk naar plafond.",       focus:["Abs"]}
+    ]
+};
+
+const badgeList = [
+    {id:'b_start', icon:'🐣', name:'Rookie',        desc:'Voltooi je eerste workout.'},
+    {id:'b_wk1',   icon:'🔥', name:'Week 1',        desc:'Bereik een 7-daagse streak.'},
+    {id:'b_push',  icon:'💪', name:'Push Master',   desc:'Borst bereikt Level 5.'},
+    {id:'b_legs',  icon:'🦵', name:'Leg Day',       desc:'Benen bereikt Level 5.'},
+    {id:'b_elite', icon:'🏆', name:'Elite',         desc:'Totaal 50 levels verdiend.'},
+    {id:'b_early', icon:'🌅', name:'Vroege Vogel',  desc:'Train voor 9 uur \'s ochtends.'}
+];
+
+const questions = [
+    {k:'name',         q:'Wat is je voornaam?',                       t:'text',   icon:'👤', hint:'Zo kunnen we je persoonlijk aanspreken.'},
+    {k:'age',          q:'Hoe oud ben je?',                           t:'number', icon:'🎂', hint:'Je leeftijd helpt ons je trainingsplan te optimaliseren.'},
+    {k:'gender',       q:'Wat is je geslacht?',                       t:'select', o:['Man','Vrouw','X'],                            icon:'⚧',  hint:'Voor een nauwkeurigere calorieberekening.'},
+    {k:'height',       q:'Hoe lang ben je? (cm)',                     t:'number', icon:'📏', hint:'Jouw lengte in centimeters. Sta rechtop!'},
+    {k:'weight',       q:'Wat is je huidig gewicht? (kg)',            t:'number', icon:'⚖️', hint:'Je huidige gewicht in kilogram.'},
+    {k:'goal',         q:'Wat is jouw hoofddoel?',                    t:'select', o:['Afvallen','Spiermassa','Conditie'],           icon:'🎯', hint:'Kies het doel dat het beste bij jou past.'},
+    {k:'reps',         q:'Wat is jouw trainingsniveau?',              t:'select', o:['8','12','15'], labels:['Beginner (8 reps)','Sportief (12 reps)','Gevorderd (15 reps)'], icon:'💪', hint:'Kies het intensiteitsniveau dat bij jou past.'},
+    {k:'availability', q:'Hoeveel dagen per week kun je trainen?',    t:'select', o:['1-2','3-4','5+'],                            icon:'📅', hint:'Hoe meer dagen, hoe sneller je resultaat boekt.'},
+    {k:'targetWeight', q:'Wat is jouw streefgewicht? (kg)',           t:'number', icon:'🏹', hint:'Het gewicht dat je wilt bereiken. Stel een realistisch doel in!'},
+    {k:'targetWeeks',  q:'In hoeveel weken wil je dit bereiken?',    t:'select', o:['4','8','12','24'], labels:['4 weken (intensief)','8 weken (aanbevolen)','12 weken (rustig)','24 weken (langzaam)'], icon:'⏱️', hint:'Een realistische tijdslijn zorgt voor duurzame resultaten.'}
+];
+
+// ============================================================
+// AUDIO
+// ============================================================
+let audioCtx = null;
+function getAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    return audioCtx;
+}
+function playSound(type) {
+    try {
+        const ctx = getAudio();
+        if (ctx.state === 'suspended') ctx.resume();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        if (type === 'rep') {
+            osc.frequency.setValueAtTime(600, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.3, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+            osc.start(); osc.stop(ctx.currentTime + 0.1);
+        } else if (type === 'lvl') {
+            [440,554,659].forEach((f,i) => {
+                const o = ctx.createOscillator(), g = ctx.createGain();
+                o.connect(g); g.connect(ctx.destination);
+                o.type = 'triangle'; o.frequency.value = f;
+                g.gain.setValueAtTime(0, ctx.currentTime);
+                g.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.1 + i*0.05);
+                g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 1.5);
+                o.start(); o.stop(ctx.currentTime + 1.5);
+            });
+        } else if (type === 'bad') {
+            osc.frequency.value = 150; osc.type = 'sawtooth';
+            gain.gain.setValueAtTime(0.2, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+            osc.start(); osc.stop(ctx.currentTime + 0.3);
+        } else if (type === 'badge') {
+            [523,659,784,1047].forEach((f,i) => {
+                const o = ctx.createOscillator(), g = ctx.createGain();
+                o.connect(g); g.connect(ctx.destination);
+                o.type = 'sine'; o.frequency.value = f;
+                g.gain.setValueAtTime(0, ctx.currentTime + i*0.12);
+                g.gain.linearRampToValueAtTime(0.25, ctx.currentTime + i*0.12 + 0.05);
+                g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i*0.12 + 0.5);
+                o.start(ctx.currentTime + i*0.12);
+                o.stop(ctx.currentTime + i*0.12 + 0.5);
+            });
+        }
+    } catch(e) {}
+}
+
+function speak(t) {
+    try {
+        const m = new SpeechSynthesisUtterance(t);
+        m.lang = 'nl-NL';
+        window.speechSynthesis.speak(m);
+    } catch(e) {}
+}
+
+// ============================================================
+// NAVIGATIE MET ANIMATIE
+// ============================================================
+function tab(t, el) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+    const scr = document.getElementById('scr-' + t);
+    if (scr) {
+        scr.classList.remove('hidden');
+        scr.classList.remove('screen-enter');
+        void scr.offsetWidth; // reflow to restart animation
+        scr.classList.add('screen-enter');
+    }
+    if (el) {
+        document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+        el.classList.add('active');
+    }
+    if (t === 'dash')     renderDash();
+    if (t === 'progress') renderProgress();
+    if (t === 'profile')  renderProfile();
+    if (t === 'social') {
+        if (!auth.currentUser) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+            document.getElementById('scr-auth').classList.remove('hidden');
+            document.getElementById('nav').classList.add('hidden');
+            return;
+        }
+        loadFriendRequests();
+        loadFriends();
+        if (user.currentGroupId) loadLeaderboard();
+    }
+}
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+function renderDash() {
+    document.getElementById('dash-greet').innerText = "HEY " + (user.name || "CHAMP").toUpperCase() + "!";
+    document.getElementById('streak-val').innerText = user.streak || 0;
+    document.getElementById('rank-display').innerText = getRank() + ' · LVL ' + getDisplayLevel();
+    updatePersonalWorkoutCard();
+    renderCalorieCard();
+    renderWaterCard();
+}
+
+// ============================================================
+// CALORIEËN TRACKER
+// ============================================================
+function calcCalorieGoal() {
+    const w = parseFloat(user.weight) || 70;
+    const h = parseFloat(user.height) || 170;
+    const a = parseInt(user.age)      || 20;
+    const isMale = (user.gender || 'Man') !== 'Vrouw';
+    const bmr = isMale
+        ? 10*w + 6.25*h - 5*a + 5
+        : 10*w + 6.25*h - 5*a - 161;
+    const avail = user.availability || '3-4';
+    const activity = avail === '1-2' ? 1.375 : avail === '3-4' ? 1.55 : 1.725;
+    const tdee = Math.round(bmr * activity);
+    const goal = user.goal;
+    if (goal === 'Afvallen')   return Math.round(tdee * 0.85);
+    if (goal === 'Spiermassa') return Math.round(tdee * 1.1);
+    return tdee;
+}
+
+function renderCalorieCard() {
+    const today = new Date().toDateString();
+    if (user.caloriesDate !== today) {
+        user.caloriesToday = 0;
+        user.caloriesDate = today;
+        save();
+    }
+    const goal = calcCalorieGoal();
+    const eaten = user.caloriesToday || 0;
+    const pct = Math.min(100, Math.round((eaten / goal) * 100));
+    document.getElementById('cal-pct').innerText = `${eaten} / ${goal} kcal`;
+    document.getElementById('cal-bar').style.width = pct + '%';
+    const bar = document.getElementById('cal-bar');
+    bar.style.background = pct > 110 ? 'var(--red)' : pct > 90 ? 'var(--green)' : 'var(--orange)';
+}
+
+function addCalories() {
+    const val = parseInt(document.getElementById('cal-input').value);
+    if (isNaN(val) || val <= 0) return;
+    const today = new Date().toDateString();
+    if (user.caloriesDate !== today) { user.caloriesToday = 0; user.caloriesDate = today; }
+    user.caloriesToday = (user.caloriesToday || 0) + val;
+    document.getElementById('cal-input').value = '';
+    save();
+    renderCalorieCard();
+    showFloat(`+${val} kcal`);
+}
+
+function resetCalories() {
+    user.caloriesToday = 0;
+    user.caloriesDate = new Date().toDateString();
+    save();
+    renderCalorieCard();
+}
+
+// ============================================================
+// WATER TRACKER
+// ============================================================
+const WATER_GOAL = 8;
+
+function renderWaterCard() {
+    const today = new Date().toDateString();
+    if (user.waterDate !== today) {
+        user.waterToday = 0;
+        user.waterDate = today;
+        save();
+    }
+    const drunk = user.waterToday || 0;
+    const pct = Math.min(100, Math.round((drunk / WATER_GOAL) * 100));
+
+    let glasses = '';
+    for (let i = 0; i < WATER_GOAL; i++) {
+        glasses += `<span class="water-glass" onclick="addWater()" title="Klik voor +1 glas">${i < drunk ? '💧' : '🫙'}</span>`;
+    }
+
+    const statusColor = pct >= 100 ? 'var(--green)' : pct >= 50 ? 'var(--blue)' : 'var(--sub)';
+    const el = document.getElementById('water-card-content');
+    if (!el) return;
+    el.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <strong style="font-size:13px;">💧 Water vandaag</strong>
+            <span style="font-size:11px;color:${statusColor};font-weight:700;">${drunk} / ${WATER_GOAL} glazen</span>
+        </div>
+        <div style="font-size:24px;letter-spacing:3px;margin-bottom:10px;line-height:1.4;">${glasses}</div>
+        <div class="bar-bg"><div style="height:100%;width:${pct}%;background:var(--blue);border-radius:5px;transition:width 0.4s ease;box-shadow:0 0 10px rgba(0,122,255,0.4);"></div></div>
+        <div style="display:flex;gap:8px;margin-top:10px;align-items:center;">
+            <button class="btn-small" onclick="addWater()" style="background:var(--blue);border:none;color:#fff;flex:1;">+ Glas water</button>
+            <button class="btn-small" onclick="resetWater()">Reset</button>
+        </div>
+    `;
+}
+
+function addWater() {
+    if ((user.waterToday || 0) >= WATER_GOAL) {
+        showToast('🎉 Dagtarget water behaald!', 'success');
+        return;
+    }
+    user.waterToday = (user.waterToday || 0) + 1;
+    user.waterDate = new Date().toDateString();
+    save();
+    renderWaterCard();
+    showFloat('💧 +1 glas');
+    if (user.waterToday === WATER_GOAL) {
+        showToast('🏆 Dagtarget water behaald! 2 liter gedronken 💧', 'success');
+    }
+}
+
+function resetWater() {
+    user.waterToday = 0;
+    user.waterDate = new Date().toDateString();
+    save();
+    renderWaterCard();
+}
+
+// ============================================================
+// GEWICHTSVERLOOP
+// ============================================================
+function logWeight() {
+    const val = parseFloat(document.getElementById('weight-log-input').value);
+    if (isNaN(val) || val < 20 || val > 400) {
+        showToast('Vul een geldig gewicht in (20-400 kg)', 'error');
+        return;
+    }
+    if (!user.weightHistory) user.weightHistory = [];
+    const today = new Date().toLocaleDateString('nl-NL');
+    const last = user.weightHistory[user.weightHistory.length - 1];
+    if (last && last.date === today) {
+        last.weight = val;
+    } else {
+        user.weightHistory.push({ date: today, weight: val });
+    }
+    if (user.weightHistory.length > 30) user.weightHistory.shift();
+    user.weight = String(val);
+    document.getElementById('weight-log-input').value = '';
+    save();
+    drawWeightChart();
+    showToast(`⚖️ Gewicht opgeslagen: ${val} kg`, 'success');
+}
+
+function drawWeightChart() {
+    const history = user.weightHistory || [];
+    const canvas = document.getElementById('weight-chart');
+    const emptyMsg = document.getElementById('weight-chart-empty');
+    const goalDisp = document.getElementById('weight-goal-display');
+    if (!canvas) return;
+
+    if (history.length < 2) {
+        canvas.style.display = 'none';
+        if (emptyMsg) emptyMsg.style.display = 'block';
+        if (goalDisp) goalDisp.style.display = 'none';
+        return;
+    }
+    canvas.style.display = 'block';
+    if (emptyMsg) emptyMsg.style.display = 'none';
+
+    const W = canvas.parentElement.clientWidth - 40 || 300;
+    const H = 170;
+    canvas.width  = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+
+    const weights = history.map(h => h.weight);
+    const tw = parseFloat(user.targetWeight) || null;
+    const allVals = tw ? [...weights, tw] : weights;
+    const minW = Math.min(...allVals) - 3;
+    const maxW = Math.max(...allVals) + 3;
+    const pad = { top: 22, right: 18, bottom: 32, left: 42 };
+    const cW = W - pad.left - pad.right;
+    const cH = H - pad.top - pad.bottom;
+
+    const toX = i => pad.left + (i / (history.length - 1)) * cW;
+    const toY = v => pad.top + cH - ((v - minW) / (maxW - minW)) * cH;
+
+    // Background
+    ctx.fillStyle = '#161616';
+    ctx.fillRect(0, 0, W, H);
+
+    // Grid & Y labels
+    ctx.strokeStyle = '#2c2c2c';
+    ctx.lineWidth = 1;
+    ctx.fillStyle = '#555';
+    ctx.font = '9px Inter';
+    ctx.textAlign = 'right';
+    for (let i = 0; i <= 4; i++) {
+        const yVal = minW + ((maxW - minW) / 4) * i;
+        const yPx  = toY(yVal);
+        ctx.beginPath(); ctx.moveTo(pad.left, yPx); ctx.lineTo(W - pad.right, yPx); ctx.stroke();
+        ctx.fillText(yVal.toFixed(1), pad.left - 5, yPx + 3);
+    }
+
+    // Target weight dashed line
+    if (tw && tw > minW && tw < maxW) {
+        const ty = toY(tw);
+        ctx.save();
+        ctx.strokeStyle = '#34c759';
+        ctx.setLineDash([5, 4]);
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(pad.left, ty); ctx.lineTo(W - pad.right, ty); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#34c759';
+        ctx.font = 'bold 9px Inter';
+        ctx.textAlign = 'left';
+        ctx.fillText('🎯 doel: ' + tw + ' kg', pad.left + 4, ty - 4);
+        ctx.restore();
+    }
+
+    // Gradient fill
+    const grad = ctx.createLinearGradient(0, pad.top, 0, H - pad.bottom);
+    grad.addColorStop(0, 'rgba(0,122,255,0.35)');
+    grad.addColorStop(1, 'rgba(0,122,255,0.02)');
+    ctx.beginPath();
+    ctx.moveTo(toX(0), H - pad.bottom);
+    ctx.lineTo(toX(0), toY(history[0].weight));
+    history.forEach((h, i) => ctx.lineTo(toX(i), toY(h.weight)));
+    ctx.lineTo(toX(history.length - 1), H - pad.bottom);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Line
+    ctx.beginPath();
+    ctx.strokeStyle = '#007aff';
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    history.forEach((h, i) => i === 0 ? ctx.moveTo(toX(i), toY(h.weight)) : ctx.lineTo(toX(i), toY(h.weight)));
+    ctx.stroke();
+
+    // Points
+    history.forEach((h, i) => {
+        ctx.beginPath();
+        ctx.arc(toX(i), toY(h.weight), 4, 0, 2 * Math.PI);
+        ctx.fillStyle = '#007aff';
+        ctx.shadowColor = '#007aff';
+        ctx.shadowBlur = 8;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        if (i === 0 || i === history.length - 1) {
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 10px Inter';
+            ctx.textAlign = 'center';
+            ctx.fillText(h.weight + ' kg', toX(i), toY(h.weight) - 10);
+        }
+    });
+
+    // X-axis labels
+    ctx.fillStyle = '#555';
+    ctx.font = '8px Inter';
+    ctx.textAlign = 'center';
+    const step = Math.max(1, Math.ceil(history.length / 5));
+    history.forEach((h, i) => {
+        if (i % step === 0 || i === history.length - 1) {
+            ctx.fillText(h.date.slice(0, 5), toX(i), H - 6);
+        }
+    });
+
+    // Goal progress display
+    if (goalDisp && tw) {
+        const current = history[history.length - 1].weight;
+        const start   = history[0].weight;
+        const totalChange = start - tw;
+        const achieved    = start - current;
+        const pct = totalChange !== 0 ? Math.round((achieved / totalChange) * 100) : 0;
+        goalDisp.style.display = 'block';
+        goalDisp.innerHTML = `🎯 Doel: ${tw} kg in ${user.targetWeeks || '?'} weken — Voortgang: <strong>${Math.max(0, pct)}%</strong>`;
+    }
+}
+
+// ============================================================
+// GEPERSONALISEERDE WORKOUT
+// ============================================================
+const personalWorkoutPlans = {
+    Afvallen:   { '1-2':['Conditie','Conditie'], '3-4':['Conditie','Conditie','Lower','Conditie'], '5+':['Conditie','Upper','Conditie','Lower','Conditie'] },
+    Spiermassa: { '1-2':['Upper','Lower'],        '3-4':['Upper','Lower','Upper','Conditie'],      '5+':['Upper','Lower','Upper','Lower','Conditie'] },
+    Conditie:   { '1-2':['Conditie','Conditie'], '3-4':['Conditie','Upper','Conditie','Lower'],    '5+':['Conditie','Upper','Conditie','Lower','Conditie'] }
+};
+
+function getPersonalPlan() {
+    const goal  = user.goal  || 'Conditie';
+    const avail = user.availability || '3-4';
+    const plans = personalWorkoutPlans[goal] || personalWorkoutPlans['Conditie'];
+    return plans[avail] || plans['3-4'];
+}
+
+function updatePersonalWorkoutCard() {
+    const plan = getPersonalPlan();
+    const goal = user.goal || 'Conditie';
+    const avail = user.availability || '3-4';
+    const today = new Date().getDay();
+    const dayIdx = (today - 1 + 7) % 7 % plan.length;
+    const todayType = plan[dayIdx];
+    const typeLabels = { Upper:'Boven Lichaam 💪', Lower:'Benen 🦵', Conditie:'Conditie & Core 🏃' };
+    const descEl = document.getElementById('personal-workout-desc');
+    if (descEl) descEl.innerText = `Doel: ${goal} · ${avail} dagen/week → Vandaag: ${typeLabels[todayType]}`;
+}
+
+function startPersonalWorkout() {
+    const plan = getPersonalPlan();
+    const today = new Date().getDay();
+    const dayIdx = (today - 1 + 7) % 7 % plan.length;
+    startCircuit(plan[dayIdx]);
+}
+
+// ============================================================
+// DARK / LIGHT MODE
+// ============================================================
+function toggleTheme() {
+    document.body.classList.toggle('light-mode');
+    const isLight = document.body.classList.contains('light-mode');
+    document.getElementById('theme-label').innerText = isLight ? '☀️ Licht thema' : '🌙 Donker thema';
+    document.getElementById('theme-knob').style.left = isLight ? '23px' : '3px';
+    document.getElementById('theme-toggle').style.background = isLight ? 'var(--blue)' : '#333';
+    localStorage.setItem('sf_theme', isLight ? 'light' : 'dark');
+}
+
+function loadTheme() {
+    if (localStorage.getItem('sf_theme') === 'light') {
+        document.body.classList.add('light-mode');
+        const label = document.getElementById('theme-label');
+        const knob  = document.getElementById('theme-knob');
+        const tog   = document.getElementById('theme-toggle');
+        if (label) label.innerText = '☀️ Licht thema';
+        if (knob)  knob.style.left = '23px';
+        if (tog)   tog.style.background = 'var(--blue)';
+    }
+}
+
+// ============================================================
+// VOORTGANGSFOTO'S
+// ============================================================
+function savePhoto(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const photos = JSON.parse(localStorage.getItem('smartfitness_photos') || '[]');
+        photos.unshift({ src: e.target.result, date: new Date().toLocaleDateString('nl-NL') });
+        if (photos.length > 12) photos.pop();
+        localStorage.setItem('smartfitness_photos', JSON.stringify(photos));
+        renderPhotos();
+        showFloat('📸 Foto opgeslagen!');
+    };
+    reader.readAsDataURL(file);
+    input.value = '';
+}
+
+function renderPhotos() {
+    const photos = JSON.parse(localStorage.getItem('smartfitness_photos') || '[]');
+    const grid = document.getElementById('photo-grid');
+    if (!grid) return;
+    if (photos.length === 0) {
+        grid.innerHTML = '<div style="color:var(--sub);font-size:11px;grid-column:span 3;">Nog geen foto\'s.</div>';
+        return;
+    }
+    grid.innerHTML = photos.map((p, i) => `
+        <div style="position:relative;">
+            <img src="${p.src}" class="photo-thumb" onclick="viewPhoto(${i})">
+            <div style="font-size:8px;color:var(--sub);text-align:center;margin-top:3px;">${p.date}</div>
+        </div>`).join('');
+}
+
+function viewPhoto(i) {
+    const photos = JSON.parse(localStorage.getItem('smartfitness_photos') || '[]');
+    const p = photos[i];
+    if (!p) return;
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.95);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;';
+    overlay.innerHTML = `<img src="${p.src}" style="max-width:90%;max-height:80vh;border-radius:12px;">
+        <div style="color:#fff;margin-top:12px;font-size:12px;">${p.date}</div>
+        <button onclick="this.parentElement.remove()" style="margin-top:16px;background:var(--red);border:none;color:#fff;padding:10px 24px;border-radius:10px;font-weight:700;cursor:pointer;">Sluiten</button>
+        <button onclick="deletePhoto(${i},this.parentElement)" style="margin-top:8px;background:transparent;border:1px solid #555;color:#888;padding:8px 20px;border-radius:10px;font-size:11px;cursor:pointer;">Verwijderen</button>`;
+    document.body.appendChild(overlay);
+}
+
+function deletePhoto(i, overlay) {
+    const photos = JSON.parse(localStorage.getItem('smartfitness_photos') || '[]');
+    photos.splice(i, 1);
+    localStorage.setItem('smartfitness_photos', JSON.stringify(photos));
+    overlay.remove();
+    renderPhotos();
+}
+
+// ============================================================
+// PDF EXPORT
+// ============================================================
+function printReport() {
+    const score = user.lastAnalysisScore || 0;
+    const date  = new Date().toLocaleDateString('nl-NL');
+    const fb = score >= 85 ? 'Perfecte houding! Zeer gecontroleerd.' :
+               score >= 60 ? 'Goed gedaan! Probeer de bewegingen vollediger.' :
+               score === 0 ? 'Nog geen data. Doe eerst een workout!' :
+               'Focus op je techniek. Ga iets langzamer.';
+    const printEl = document.getElementById('print-area');
+    printEl.style.display = 'block';
+    printEl.innerHTML = `
+        <h1 style="font-family:Arial;font-size:24px;margin-bottom:4px;">Smart Fitness — Trainingsrapport</h1>
+        <p style="color:#888;font-size:12px;margin-bottom:20px;">${date} · ${user.name || 'Atleet'}</p>
+        <div style="font-size:64px;font-weight:900;color:#007aff;margin:10px 0;">${score}%</div>
+        <p style="font-size:14px;margin-bottom:12px;color:#555;">Houding Score</p>
+        <div style="background:#f0f0f0;padding:15px;border-radius:8px;margin-bottom:20px;">
+            <strong>Coach Feedback:</strong><br>${fb}
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <tr style="background:#f5f5f5;"><th style="padding:8px;text-align:left;">Spiergroep</th><th style="padding:8px;">Level</th><th style="padding:8px;">XP</th></tr>
+            ${Object.entries(user.stats || {}).map(([k,v]) => `
+                <tr style="border-bottom:1px solid #eee;"><td style="padding:8px;">${k}</td><td style="padding:8px;text-align:center;">${v.lvl}</td><td style="padding:8px;text-align:center;">${Math.round(v.xp)}</td></tr>
+            `).join('')}
+        </table>
+        <p style="font-size:10px;color:#aaa;margin-top:20px;">Smart Fitness · Gegenereerd op ${date}</p>
+    `;
+    window.print();
+    setTimeout(() => { printEl.style.display = 'none'; }, 1000);
+}
+
+// ============================================================
+// VOICE COMMANDS
+// ============================================================
+let voiceActive = false;
+let voiceRecognition = null;
+
+function toggleVoice() {
+    const btn = document.getElementById('voice-btn');
+    if (voiceActive) {
+        voiceActive = false;
+        if (voiceRecognition) voiceRecognition.stop();
+        btn.classList.remove('active');
+        btn.innerText = '🎤';
+    } else {
+        startVoice();
+    }
+}
+
+function startVoice() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { alert('Spraakherkenning niet beschikbaar op dit apparaat.'); return; }
+    voiceRecognition = new SR();
+    voiceRecognition.lang = 'nl-NL';
+    voiceRecognition.continuous = true;
+    voiceRecognition.interimResults = false;
+    voiceRecognition.onresult = (e) => {
+        const last = e.results[e.results.length - 1];
+        const cmd  = last[0].transcript.trim().toLowerCase();
+        if (cmd.includes('stop') || cmd.includes('stoppen')) { stopWorkout(); }
+        else if (cmd.includes('sla') || cmd.includes('skip')) { skipRest(); }
+        else if (cmd.includes('rep') || cmd.includes('klaar')) { if (!isRest) registerRep(); }
+    };
+    voiceRecognition.onerror = () => { voiceActive = false; document.getElementById('voice-btn').classList.remove('active'); };
+    voiceRecognition.onend   = () => { if (voiceActive) voiceRecognition.start(); };
+    voiceRecognition.start();
+    voiceActive = true;
+    document.getElementById('voice-btn').classList.add('active');
+    document.getElementById('voice-btn').innerText = '🎙️';
+}
+
+// ============================================================
+// VIDEO TUTORIALS
+// ============================================================
+function openTutorial() {
+    const exe = circuit[cIdx] ? circuit[cIdx].n : '';
+    if (!exe) return;
+    const query = encodeURIComponent(exe + ' oefening uitleg Nederlands');
+    window.open(`https://www.youtube.com/results?search_query=${query}`, '_blank');
+}
+
+// ============================================================
+// HELPERS / RANKINGS
+// ============================================================
+function getAvgLevel() {
+    const vals = Object.values(user.stats);
+    return vals.reduce((a,b) => a + b.lvl, 0) / vals.length;
+}
+
+function getRank() {
+    const avg = getAvgLevel();
+    if (avg < 2)  return "Rookie";
+    if (avg < 3)  return "Amateur";
+    if (avg < 5)  return "Atleet";
+    if (avg < 8)  return "Pro";
+    if (avg < 12) return "Legendarisch";
+    return "ELITE";
+}
+
+function getDisplayLevel() { return Math.floor(getAvgLevel()); }
+function getRepTarget() { const r = parseInt(user.reps); return isNaN(r) ? 10 : r; }
+
+// ============================================================
+// ONBOARDING
+// ============================================================
+let currentStep = 0;
+
+function renderQ() {
+    const q = questions[currentStep];
+    const total = questions.length;
+    const pct = Math.round((currentStep / total) * 100);
+
+    let inputHtml = '';
+    if (q.t === 'select') {
+        const opts = q.labels || q.o;
+        inputHtml = `<select id="q-val" style="text-align:center;font-weight:600;font-size:15px;width:100%;max-width:280px;">` +
+            q.o.map((o,i) => `<option value="${o}">${opts[i]}</option>`).join('') +
+            `</select>`;
+    } else {
+        inputHtml = `<input type="${q.t}" id="q-val" placeholder="Typ hier je antwoord..." autocomplete="off" style="text-align:center;font-size:18px;font-weight:700;max-width:280px;">`;
+    }
+
+    document.getElementById('q-container').innerHTML = `
+        <div class="q-card">
+            <div class="q-icon">${q.icon || '✨'}</div>
+            <div class="q-title">${q.q}</div>
+            <div class="q-hint">${q.hint || ''}</div>
+            ${inputHtml}
+            <button class="btn" onclick="saveQ()" style="margin-top:18px;max-width:280px;width:100%;">VERDER →</button>
+        </div>`;
+
+    setTimeout(() => {
+        const el = document.getElementById('q-val');
+        if (el) el.focus();
+        // Pre-fill with existing value
+        if (user[q.k] && el) el.value = user[q.k];
+    }, 100);
+
+    // Progress bar
+    const bar   = document.getElementById('q-progress-bar');
+    const lbl   = document.getElementById('q-progress-label');
+    const pctEl = document.getElementById('q-progress-pct');
+    const dotsEl= document.getElementById('q-dots');
+    if (bar)   bar.style.width = pct + '%';
+    if (lbl)   lbl.innerText = `Vraag ${currentStep + 1} van ${total}`;
+    if (pctEl) pctEl.innerText = pct + '%';
+    if (dotsEl) {
+        dotsEl.innerHTML = questions.map((_, i) =>
+            `<div class="dot-step" style="width:${i === currentStep ? 18 : 6}px;background:${i < currentStep ? 'var(--green)' : i === currentStep ? 'var(--blue)' : '#2a2a2a'};"></div>`
+        ).join('');
+    }
+}
+
+function saveQ() {
+    const val = document.getElementById('q-val').value.trim();
+    if (!val) { showToast('Vul dit veld in!', 'warning'); return; }
+    user[questions[currentStep].k] = val;
+    currentStep++;
+    if (currentStep < questions.length) {
+        renderQ();
+    } else {
+        save();
+        showApp();
+    }
+}
+
+function showApp() {
+    document.getElementById('nav').classList.remove('hidden');
+    loadTheme();
+    tab('dash');
+    // Start notifications if already granted
+    if ('Notification' in window && Notification.permission === 'granted') {
+        scheduleWorkoutReminder();
+        scheduleStreakNotification();
+    }
+}
+
+// ============================================================
+// PROFIEL
+// ============================================================
+function renderProfile() {
+    const c = document.getElementById('profile-fields');
+    c.innerHTML = questions.map(q => {
+        const label = `<label style="font-size:10px;color:var(--sub);display:block;margin-bottom:5px;margin-top:10px;">${q.icon || ''} ${q.q}</label>`;
+        if (q.t === 'select') {
+            const opts = q.labels || q.o;
+            return label + `<select onchange="user['${q.k}']=this.value;save()">` +
+                q.o.map((o,i) => `<option value="${o}" ${user[q.k]==o?'selected':''}>${opts[i]}</option>`).join('') +
+                `</select>`;
+        }
+        return label + `<input type="${q.t}" value="${user[q.k]||''}" onchange="user['${q.k}']=this.value;save()">`;
+    }).join('');
+    renderPhotos();
+    loadTheme();
+    updateNotifBtn();
+}
+
+// ============================================================
+// STATS & BADGES
+// ============================================================
+function renderProgress() {
+    document.getElementById('stats-render').innerHTML = Object.keys(user.stats).map(key => {
+        const s = user.stats[key];
+        const target = Math.round(100 * Math.pow(1.75, s.lvl - 1));
+        const pct = Math.min((s.xp / target) * 100, 100);
+        return `<div class="stat-row">
+            <div class="stat-header"><span>${key.toUpperCase()}</span><span>LVL ${s.lvl} <span style="color:var(--sub);font-weight:400;">(${Math.round(s.xp)}/${target} XP)</span></span></div>
+            <div class="bar-bg"><div class="bar-fill" style="width:${pct}%"></div></div>
+        </div>`;
+    }).join('');
+
+    document.getElementById('badges-render').innerHTML = badgeList.map(b => {
+        const unlocked = (user.badges || []).includes(b.id);
+        return `<div class="badge-item ${unlocked?'unlocked':''}" title="${b.desc}">
+            <div class="badge-icon">${b.icon}</div>
+            <div class="badge-name">${b.name}</div>
+        </div>`;
+    }).join('');
+
+    const hist = user.history || [];
+    if (hist.length > 0) {
+        document.getElementById('history-render').innerHTML = hist.slice().reverse().slice(0,5).map(h =>
+            `<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--card-border);">
+                <span>${h.date}</span><span>${h.cat} — ${h.reps} reps</span>
+            </div>`
+        ).join('');
+    }
+
+    // Gewicht input pre-fill
+    if (user.weight) {
+        const inp = document.getElementById('weight-log-input');
+        if (inp && !inp.value) inp.placeholder = `Huidig: ${user.weight} kg`;
+    }
+    drawWeightChart();
+}
+
+// ============================================================
+// SOCIAL — VRIENDSCHAPSVERZOEKEN STUREN
+// ============================================================
+async function sendFriendRequest(toUid, toName) {
+    const myUid = auth.currentUser?.uid;
+    if (!myUid) { alert('Je moet ingelogd zijn om vrienden toe te voegen!'); return; }
+    try {
+        const existing = await db.collection('friendRequests')
+            .where('from', '==', myUid)
+            .where('to',   '==', toUid)
+            .where('status','==','pending')
+            .get();
+        if (!existing.empty) {
+            document.getElementById('search-results').innerHTML =
+                `<div style="color:var(--orange);font-size:12px;font-weight:700;">⏳ Verzoek al verstuurd aan ${toName}!</div>`;
+            return;
+        }
+        await db.collection('friendRequests').add({
+            from:      myUid,
+            fromName:  user.name || 'Onbekend',
+            to:        toUid,
+            status:    'pending',
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        document.getElementById('search-results').innerHTML =
+            `<div style="color:var(--green);font-size:12px;font-weight:700;">✓ Vriendschapsverzoek verstuurd naar ${toName}!</div>`;
+    } catch(e) {
+        console.error('sendFriendRequest fout:', e);
+        alert('Fout bij versturen: ' + e.message);
+    }
+}
+
+// ============================================================
+// SOCIAL — VRIENDSCHAPSVERZOEKEN LADEN
+// ============================================================
+async function loadFriendRequests() {
+    const myUid = auth.currentUser?.uid;
+    if (!myUid) return;
+    try {
+        const snap = await db.collection('friendRequests')
+            .where('to', '==', myUid)
+            .where('status', '==', 'pending')
+            .get();
+        const card = document.getElementById('requests-card');
+        const list = document.getElementById('requests-list');
+        list.innerHTML = '';
+        if (snap.empty) { card.style.display = 'none'; }
+        else {
+            card.style.display = 'block';
+            snap.forEach(doc => {
+                const d = doc.data();
+                list.innerHTML += `
+                    <div class="friend-card" style="margin-bottom:8px;">
+                        <div>
+                            <div style="font-weight:700;font-size:13px;">👤 ${d.fromName}</div>
+                            <div style="font-size:10px;color:var(--sub);">wil jouw vriend worden</div>
+                        </div>
+                        <div style="display:flex;gap:6px;">
+                            <button class="btn-small" onclick="acceptRequest('${doc.id}','${d.from}','${d.fromName}')" style="background:var(--green);border:none;color:#fff;">✓</button>
+                            <button class="btn-small" onclick="declineRequest('${doc.id}')" style="background:var(--red);border:none;color:#fff;">✕</button>
+                        </div>
+                    </div>`;
+            });
+        }
+        await loadChallenges(list, card);
+        await loadGroupInvites(list, card);
+    } catch(e) { console.error(e); }
+}
+
+// ============================================================
+// SOCIAL — ACCEPTEER VERZOEK
+// ============================================================
+async function acceptRequest(reqId, fromUid, fromName) {
+    const myUid = auth.currentUser?.uid;
+    if (!myUid) return;
+    try {
+        if (!user.friends) user.friends = [];
+        if (!user.friends.includes(fromUid)) user.friends.push(fromUid);
+        save();
+        try {
+            const senderDoc = await db.collection('users').doc(fromUid).get();
+            if (senderDoc.exists) {
+                const sf = senderDoc.data().friends || [];
+                if (!sf.includes(myUid)) {
+                    sf.push(myUid);
+                    await db.collection('users').doc(fromUid).update({ friends: sf });
+                }
+            }
+        } catch (permErr) {
+            await db.collection('friendRequests').add({
+                from: myUid,
+                fromName: user.name || 'Onbekend',
+                to: fromUid,
+                status: 'pending',
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        }
+        await db.collection('friendRequests').doc(reqId).delete();
+        showFloat('✅ ' + fromName + ' is nu je vriend!');
+        loadFriendRequests();
+        loadFriends();
+    } catch(e) { alert('Fout: ' + e.message); }
+}
+
+async function declineRequest(reqId) {
+    try {
+        await db.collection('friendRequests').doc(reqId).delete();
+        loadFriendRequests();
+    } catch(e) {}
+}
+
+// ============================================================
+// SOCIAL — VRIENDEN ZOEKEN
+// ============================================================
+async function searchFriend() {
+    const term = document.getElementById('search-input').value.trim().toLowerCase();
+    const div  = document.getElementById('search-results');
+    if (!term) { div.innerHTML = '<div style="color:var(--sub);font-size:12px;">Typ een naam om te zoeken.</div>'; return; }
+    div.innerHTML = '<div class="spinner"></div>';
+    try {
+        const myUid = auth.currentUser?.uid;
+        let results = [];
+        const snap = await db.collection('users')
+            .where('nameSearch', '>=', term)
+            .where('nameSearch', '<=', term + '\uf8ff')
+            .limit(20).get();
+        if (!snap.empty) {
+            snap.forEach(doc => results.push({ id: doc.id, data: doc.data() }));
+        } else {
+            const allSnap = await db.collection('users').limit(200).get();
+            allSnap.forEach(doc => {
+                const d = doc.data();
+                const n = (d.nameSearch || (d.name || '').toLowerCase());
+                if (n.includes(term)) results.push({ id: doc.id, data: d });
+            });
+        }
+        results = results.filter(r => r.id !== myUid);
+        if (results.length === 0) {
+            div.innerHTML = '<div style="color:var(--sub);font-size:12px;">Niemand gevonden.</div>';
+            return;
+        }
+        div.innerHTML = '';
+        results.forEach(({ id, data: d }) => {
+            const isFriend = (user.friends || []).includes(id);
+            const avgLvl = d.stats
+                ? (Object.values(d.stats).reduce((a,b) => a + b.lvl, 0) / Object.values(d.stats).length).toFixed(1)
+                : '1.0';
+            const safeName = (d.name || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+            div.innerHTML += `
+                <div class="friend-card">
+                    <div>
+                        <div style="font-weight:700;font-size:13px;">${d.name || 'Onbekend'}</div>
+                        <div style="font-size:10px;color:var(--sub);">Gem. Level ${avgLvl} · ${d.goal || 'Atleet'}</div>
+                    </div>
+                    ${isFriend
+                        ? '<span style="font-size:11px;color:var(--green);font-weight:700;">✓ Vriend</span>'
+                        : `<button class="btn-small" onclick="sendFriendRequest('${id}','${safeName}')" style="background:var(--blue);border:none;color:#fff;">+ Verzoek</button>`
+                    }
+                </div>`;
+        });
+    } catch(e) {
+        div.innerHTML = '<div style="color:var(--red);font-size:12px;">Fout bij zoeken. Zorg dat je ingelogd bent.</div>';
+    }
+}
+
+// ============================================================
+// SOCIAL — VRIENDEN LADEN
+// ============================================================
+async function loadFriends() {
+    const div = document.getElementById('friends-list');
+    if (!user.friends || !user.friends.length) {
+        div.innerHTML = '<div style="color:var(--sub);font-size:12px;">Nog geen vrienden. Zoek hierboven!</div>';
+        return;
+    }
+    div.innerHTML = '<div class="spinner"></div>';
+    let html = '';
+    for (const uid of user.friends) {
+        try {
+            const doc = await db.collection('users').doc(uid).get();
+            if (!doc.exists) continue;
+            const d = doc.data();
+            const avgLvl = d.stats
+                ? (Object.values(d.stats).reduce((a,b) => a + b.lvl, 0) / Object.values(d.stats).length).toFixed(1)
+                : '1.0';
+            const safeName = (d.name || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+            html += `
+                <div class="friend-card" style="margin-bottom:8px;">
+                    <div>
+                        <div style="font-weight:700;font-size:13px;">${d.name || 'Onbekend'}</div>
+                        <div style="font-size:10px;color:var(--sub);">Gem. Level ${avgLvl} · ${d.totalWorkouts||0} workouts</div>
+                    </div>
+                    <div style="display:flex;gap:6px;align-items:center;">
+                        <div style="font-weight:900;font-size:16px;color:var(--blue);margin-right:4px;">LVL ${Math.floor(parseFloat(avgLvl))}</div>
+                        ${user.currentGroupId
+                            ? `<button class="btn-small" onclick="inviteFriendToGroup('${uid}','${safeName}')" style="background:var(--orange);border:none;color:#fff;font-size:10px;">📨</button>`
+                            : ''}
+                        <button class="btn-small" onclick="sendChallenge('${uid}','${safeName}')" style="background:var(--red);border:none;color:#fff;font-size:10px;">⚔️</button>
+                    </div>
+                </div>`;
+        } catch(e) {}
+    }
+    div.innerHTML = html || '<div style="color:var(--sub);font-size:12px;">Vrienden niet geladen.</div>';
+}
+
+// ============================================================
+// SOCIAL — UITDAGINGEN
+// ============================================================
+async function sendChallenge(toUid, toName) {
+    const myUid = auth.currentUser?.uid;
+    if (!myUid) return;
+    const types = ['Meeste Push-ups vandaag','Meeste Squats vandaag','Langste plank deze week','Meeste workouts deze week'];
+    const type  = types[Math.floor(Math.random() * types.length)];
+    try {
+        await db.collection('challenges').add({
+            from: myUid, fromName: user.name || 'Atleet',
+            to: toUid, type, status: 'pending',
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        showFloat('⚔️ Uitdaging verstuurd!');
+        alert(`Uitdaging verstuurd aan ${toName}: "${type}"`);
+    } catch(e) { alert('Fout: ' + e.message); }
+}
+
+async function loadChallenges(list, card) {
+    const myUid = auth.currentUser?.uid;
+    if (!myUid) return;
+    try {
+        const snap = await db.collection('challenges')
+            .where('to', '==', myUid).where('status','==','pending').get();
+        if (snap.empty) return;
+        card.style.display = 'block';
+        snap.forEach(doc => {
+            const d = doc.data();
+            list.innerHTML += `
+                <div class="friend-card" style="margin-bottom:8px;border-left:3px solid var(--red);">
+                    <div>
+                        <div style="font-weight:700;font-size:13px;">⚔️ Uitdaging van ${d.fromName}</div>
+                        <div style="font-size:10px;color:var(--sub);">${d.type}</div>
+                    </div>
+                    <div style="display:flex;gap:6px;">
+                        <button class="btn-small" onclick="acceptChallenge('${doc.id}')" style="background:var(--green);border:none;color:#fff;">Accepteer</button>
+                        <button class="btn-small" onclick="declineChallenge('${doc.id}')" style="background:var(--red);border:none;color:#fff;">✕</button>
+                    </div>
+                </div>`;
+        });
+    } catch(e) {}
+}
+
+async function acceptChallenge(id) {
+    try {
+        await db.collection('challenges').doc(id).update({ status: 'accepted' });
+        showFloat('⚔️ Uitdaging geaccepteerd!');
+        loadFriendRequests();
+    } catch(e) {}
+}
+
+async function declineChallenge(id) {
+    try {
+        await db.collection('challenges').doc(id).delete();
+        loadFriendRequests();
+    } catch(e) {}
+}
+
+// ============================================================
+// SOCIAL — GROEPEN & LEADERBOARD
+// ============================================================
+function calcScore() { return Math.round(getAvgLevel() * 10); }
+
+async function inviteFriendToGroup(friendUid, friendName) {
+    if (!user.currentGroupId) { alert('Maak eerst een groep aan!'); return; }
+    if (!auth.currentUser) return;
+    try {
+        await db.collection('groupInvites').add({
+            from: auth.currentUser.uid, fromName: user.name || 'Iemand',
+            to: friendUid, groupId: user.currentGroupId,
+            status: 'pending',
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        showFloat('📨 Uitnodiging verstuurd!');
+    } catch(e) { alert('Fout: ' + e.message); }
+}
+
+async function loadGroupInvites(list, card) {
+    const myUid = auth.currentUser?.uid;
+    if (!myUid) return;
+    try {
+        const snap = await db.collection('groupInvites')
+            .where('to', '==', myUid).where('status','==','pending').get();
+        if (snap.empty) return;
+        card.style.display = 'block';
+        snap.forEach(doc => {
+            const d = doc.data();
+            list.innerHTML += `
+                <div class="friend-card" style="margin-bottom:8px;border-left:3px solid var(--gold);">
+                    <div>
+                        <div style="font-weight:700;font-size:13px;">🏆 Groepsuitnodiging</div>
+                        <div style="font-size:10px;color:var(--sub);">${d.fromName} nodigt je uit voor groep "${d.groupId}"</div>
+                    </div>
+                    <div style="display:flex;gap:6px;">
+                        <button class="btn-small" onclick="acceptGroupInvite('${doc.id}','${d.groupId}')" style="background:var(--gold);border:none;color:#000;font-weight:700;">JOIN</button>
+                        <button class="btn-small" onclick="declineGroupInvite('${doc.id}')" style="background:var(--red);border:none;color:#fff;">✕</button>
+                    </div>
+                </div>`;
+        });
+    } catch(e) {}
+}
+
+async function acceptGroupInvite(inviteId, groupId) {
+    if (!auth.currentUser) return;
+    try {
+        await db.collection('groups').doc(groupId).update({
+            [`scores.${auth.currentUser.uid}`]: { name: user.name || 'Atleet', score: calcScore() }
+        });
+        user.currentGroupId = groupId;
+        save();
+        await db.collection('groupInvites').doc(inviteId).delete();
+        showFloat('🏆 Je bent lid van de groep!');
+        loadFriendRequests(); loadFriends(); loadLeaderboard();
+    } catch(e) { alert('Fout: ' + e.message); }
+}
+
+async function declineGroupInvite(inviteId) {
+    try { await db.collection('groupInvites').doc(inviteId).delete(); loadFriendRequests(); } catch(e) {}
+}
+
+async function createGroup() {
+    if (!auth.currentUser) { alert('Je moet ingelogd zijn!'); return; }
+    const name = document.getElementById('group-name-input').value.trim();
+    if (!name) { alert('Vul een groepsnaam in!'); return; }
+    const groupId = name.toLowerCase().replace(/\s+/g, '-');
+    try {
+        await db.collection('groups').doc(groupId).set({
+            groupName: name, createdBy: auth.currentUser.uid,
+            scores: { [auth.currentUser.uid]: { name: user.name || 'Atleet', score: calcScore() } }
+        });
+        user.currentGroupId = groupId;
+        save();
+        alert('Groep "' + name + '" aangemaakt!');
+        loadFriends(); loadLeaderboard();
+    } catch(e) { alert('Fout: ' + e.message); }
+}
+
+async function joinGroup() {
+    if (!auth.currentUser) { alert('Je moet ingelogd zijn!'); return; }
+    const name = document.getElementById('group-name-input').value.trim();
+    if (!name) { alert('Typ de groepsnaam!'); return; }
+    const groupId = name.toLowerCase().replace(/\s+/g, '-');
+    try {
+        await db.collection('groups').doc(groupId).update({
+            [`scores.${auth.currentUser.uid}`]: { name: user.name || 'Atleet', score: calcScore() }
+        });
+        user.currentGroupId = groupId;
+        save();
+        loadFriends(); loadLeaderboard();
+    } catch(e) { alert('Groep niet gevonden!'); }
+}
+
+async function loadLeaderboard() {
+    if (!user.currentGroupId) return;
+    const container = document.getElementById('leaderboard-container');
+    container.innerHTML = '<div class="card"><div class="spinner"></div></div>';
+    try {
+        const doc = await db.collection('groups').doc(user.currentGroupId).get();
+        if (!doc.exists) { container.innerHTML = ''; return; }
+        const data = doc.data();
+        const myUid = auth.currentUser?.uid;
+        const players = Object.entries(data.scores)
+            .map(([uid, info]) => ({ ...info, isMe: uid === myUid }))
+            .sort((a, b) => b.score - a.score);
+        let html = `<div class="card"><strong style="font-size:12px;display:block;margin-bottom:12px;color:var(--gold);">🏆 ${data.groupName}</strong>`;
+        players.forEach((p, i) => {
+            const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i+1)+'.';
+            html += `<div class="leaderboard-row ${i===0?'gold-border':''}">
+                <div>
+                    <span style="font-size:16px;margin-right:8px;">${medal}</span>
+                    <span style="font-weight:${p.isMe?'800':'600'};font-size:13px;color:${p.isMe?'var(--blue)':'var(--accent)'};">${p.name}</span>
+                    ${p.isMe ? '<span style="font-size:9px;color:var(--blue);margin-left:4px;">(jij)</span>' : ''}
+                </div>
+                <div class="leaderboard-num">${p.score}</div>
+            </div>`;
+        });
+        html += '</div>';
+        container.innerHTML = html;
+    } catch(e) { container.innerHTML = ''; }
+}
+
+async function updateGroupScore() {
+    if (!user.currentGroupId || !auth.currentUser) return;
+    try {
+        await db.collection('groups').doc(user.currentGroupId).update({
+            [`scores.${auth.currentUser.uid}.score`]: calcScore(),
+            [`scores.${auth.currentUser.uid}.name`]:  user.name || 'Atleet'
+        });
+    } catch(e) {}
+}
+
+// ============================================================
+// WORKOUT LOGICA
+// ============================================================
+let circuit = [], cIdx = 0, reps = 0, sets = 1;
+let isRest = false, restTimer = null, tLeft = 30;
+let sessionScores = [], stage = 'up', currentCat = '', camera = null, lastRepTime = 0;
+
+function startCircuit(cat) {
+    currentCat = cat;
+    circuit = [...exercises[cat]].sort(() => 0.5 - Math.random());
+    cIdx = 0; sets = 1; reps = 0; sessionScores = [];
+    tab('workout');
+    startAI();
+    startRest(30, "LEES DE UITLEG");
+}
+
+function stopWorkout() {
+    if (camera) { try { camera.stop(); } catch(e) {} camera = null; }
+    if (voiceActive) { toggleVoice(); }
+    if (window._plankTimer)    { clearInterval(window._plankTimer);    window._plankTimer    = null; }
+    if (window._fallbackTimer) { clearInterval(window._fallbackTimer); window._fallbackTimer = null; }
+    if (sessionScores.length > 0) {
+        user.lastAnalysisScore = Math.round(sessionScores.reduce((a,b) => a+b, 0) / sessionScores.length);
+    }
+    sessionScores = [];
+    save();
+    tab('dash');
+}
+
+function startRest(time, title) {
+    isRest = true; tLeft = time;
+    const overlay = document.getElementById('rest-overlay');
+    overlay.classList.remove('hidden');
+    document.getElementById('rest-title').innerText = title;
+    document.getElementById('rest-exe').innerText   = circuit[cIdx] ? circuit[cIdx].n.toUpperCase() : '';
+    document.getElementById('rest-instr').innerText = circuit[cIdx] ? circuit[cIdx].i : '';
+    runTimer();
+}
+
+function runTimer() {
+    document.getElementById('timer-val').innerText = tLeft;
+    if (restTimer) clearInterval(restTimer);
+    restTimer = setInterval(() => {
+        tLeft--;
+        document.getElementById('timer-val').innerText = tLeft;
+        if (tLeft <= 0) skipRest();
+    }, 1000);
+}
+
+function adjustTime(s) { tLeft += s; document.getElementById('timer-val').innerText = tLeft; }
+
+function skipRest() {
+    clearInterval(restTimer);
+    isRest = false;
+    document.getElementById('rest-overlay').classList.add('hidden');
+    updateHUD();
+    speak("Start " + (circuit[cIdx] ? circuit[cIdx].n : ''));
+    lastRepTime = Date.now();
+}
+
+function updateHUD(feedback) {
+    document.getElementById('hud-idx').innerText  = `${cIdx+1}/6`;
+    document.getElementById('hud-set').innerText  = `${sets}/3`;
+    document.getElementById('hud-reps').innerText = `${reps}/${getRepTarget()}`;
+    const tip = document.getElementById('coaching-tip');
+    if (feedback) {
+        tip.innerText = feedback;
+        tip.className = feedback.includes('GOED') ? 'feedback-good' : 'feedback-warn';
+        return;
+    }
+    tip.className = '';
+    const rem = getRepTarget() - reps;
+    if (rem <= 3 && rem > 0) tip.innerText = "NOG " + rem + "...";
+    else if (reps > 0) tip.innerText = "BLIJF GAAN!";
+    else tip.innerText = "START!";
+}
+
+function registerRep() {
+    const now = Date.now();
+    if (now - lastRepTime < 800) {
+        updateHUD("TE SNEL! SLOWER");
+        playSound('bad');
+        lastRepTime = now;
+        return;
+    }
+    lastRepTime = now;
+    reps++;
+    updateHUD("GOED BEZIG! 💪");
+    playSound('rep');
+    showFloat("+15 XP");
+
+    if (circuit[cIdx]) {
+        circuit[cIdx].focus.forEach(muscle => {
+            if (!user.stats[muscle]) return;
+            user.stats[muscle].xp += 15;
+            const target = Math.round(100 * Math.pow(1.5, user.stats[muscle].lvl - 1));
+            if (user.stats[muscle].xp >= target) {
+                user.stats[muscle].xp -= target;
+                user.stats[muscle].lvl++;
+                showLevelUp(muscle, user.stats[muscle].lvl);
+                checkBadges();
+            }
+        });
+    }
+    save();
+
+    if (reps >= getRepTarget()) {
+        if (sets < 3) {
+            sets++; reps = 0;
+            startRest(15, "SET VOLTOOID! 🔥");
+        } else {
+            cIdx++;
+            if (cIdx < 6) { sets = 1; reps = 0; startRest(30, "VOLGENDE OEFENING"); }
+            else { finishWorkout(); }
+        }
+    }
+}
+
+function finishWorkout() {
+    checkStreak();
+    checkBadges('finish');
+    user.totalWorkouts = (user.totalWorkouts || 0) + 1;
+    if (!user.history) user.history = [];
+    const totalReps = getRepTarget() * 3 * 6;
+    user.history.push({ date: new Date().toLocaleDateString('nl-NL'), cat: currentCat, reps: totalReps });
+    if (sessionScores.length > 0) {
+        user.lastAnalysisScore = Math.round(sessionScores.reduce((a,b) => a+b, 0) / sessionScores.length);
+    }
+    save();
+    updateGroupScore();
+    speak("Training voltooid. Goed gedaan!");
+
+    // Streak notificatie uitschakelen nodig (geen streak gevaar meer vandaag)
+    if ('Notification' in window && Notification.permission === 'granted') {
+        sendNotification('🎉 Workout voltooid!', `Goed gedaan ${user.name || 'atleet'}! Je hebt je dagelijkse training afgerond. 🔥 Streak: ${user.streak}`);
+    }
+
+    const score  = user.lastAnalysisScore;
+    const streak = user.streak;
+    const cat    = currentCat;
+    sessionScores = [];
+
+    // Stop camera & AI
+    if (camera) { try { camera.stop(); } catch(e) {} camera = null; }
+    if (voiceActive) { toggleVoice(); }
+    if (window._plankTimer)    { clearInterval(window._plankTimer);    window._plankTimer    = null; }
+    if (window._fallbackTimer) { clearInterval(window._fallbackTimer); window._fallbackTimer = null; }
+
+    // Ga naar dashboard en toon samenvatting
+    tab('dash');
+    setTimeout(() => showWorkoutSummary({ cat, reps: totalReps, score, streak }), 150);
+}
+
+// ============================================================
+// WORKOUT SAMENVATTING
+// ============================================================
+function showWorkoutSummary({ cat, reps, score, streak }) {
+    const typeLabels = { Upper:'Boven Lichaam 💪', Lower:'Benen 🦵', Conditie:'Conditie & Core 🏃' };
+    const fb = score >= 85 ? '🎯 Perfecte houding! Top techniek!' :
+               score >= 60 ? '👍 Goed gedaan! Techniek kan nog iets beter.' :
+               score > 0   ? '⚡ Werk aan je techniek voor betere resultaten.' :
+               '✅ Workout afgerond!';
+    const xpEarned  = reps * 15;
+    const calBurned = Math.round(reps * 0.8);
+
+    document.getElementById('summary-content').innerHTML = `
+        <div class="card" style="text-align:center;margin-bottom:12px;border:2px solid var(--gold);">
+            <div style="font-size:58px;font-weight:900;color:var(--blue);font-family:'Montserrat',sans-serif;line-height:1;">${score}%</div>
+            <div style="font-size:10px;color:var(--sub);text-transform:uppercase;letter-spacing:2px;margin-bottom:8px;">Houding Score</div>
+            <div style="font-size:13px;color:var(--accent);">${fb}</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+            <div class="card" style="text-align:center;padding:16px 10px;">
+                <div class="summary-stat"><div class="val" style="color:var(--green);">${reps}</div><div class="lbl">Totaal Reps</div></div>
+            </div>
+            <div class="card" style="text-align:center;padding:16px 10px;">
+                <div class="summary-stat"><div class="val" style="color:var(--orange);">${calBurned}</div><div class="lbl">kcal verbrand</div></div>
+            </div>
+            <div class="card" style="text-align:center;padding:16px 10px;">
+                <div class="summary-stat"><div class="val" style="color:var(--gold);">+${xpEarned}</div><div class="lbl">XP verdiend</div></div>
+            </div>
+            <div class="card" style="text-align:center;padding:16px 10px;">
+                <div class="summary-stat"><div class="val" style="color:var(--orange);">🔥 ${streak}</div><div class="lbl">Streak dagen</div></div>
+            </div>
+        </div>
+        <div class="card" style="text-align:center;">
+            <div style="font-size:10px;font-weight:700;color:var(--sub);letter-spacing:1px;text-transform:uppercase;margin-bottom:5px;">Workout Type</div>
+            <div style="font-size:18px;font-weight:800;">${typeLabels[cat] || cat}</div>
+        </div>
+    `;
+    document.getElementById('summary-overlay').style.display = 'flex';
+}
+
+function closeSummary() {
+    document.getElementById('summary-overlay').style.display = 'none';
+}
+
+function checkStreak() {
+    const today = new Date().toDateString();
+    if (user.lastDate === today) return;
+    const yesterday = new Date(); yesterday.setDate(yesterday.getDate()-1);
+    user.streak = (user.lastDate === yesterday.toDateString()) ? (user.streak||0)+1 : 1;
+    user.lastDate = today;
+}
+
+// ============================================================
+// BADGES — met eigen popup
+// ============================================================
+let badgeQueue = [];
+
+function checkBadges(trigger) {
+    if (!user.badges) user.badges = [];
+    const newBadges = [];
+    const add = (id) => { if (!user.badges.includes(id)) { user.badges.push(id); newBadges.push(id); } };
+    if (trigger === 'finish') add('b_start');
+    if (user.streak >= 7) add('b_wk1');
+    if (trigger === 'finish' && new Date().getHours() < 9) add('b_early');
+    if (user.stats['Borst'] && user.stats['Borst'].lvl >= 5) add('b_push');
+    if (user.stats['Benen'] && user.stats['Benen'].lvl >= 5) add('b_legs');
+    if (Object.values(user.stats).reduce((a,b) => a+b.lvl,0) >= 50) add('b_elite');
+
+    if (newBadges.length) {
+        save();
+        // Small delay so workout summary shows first
+        setTimeout(() => newBadges.forEach(id => enqueueBadge(id)), 1200);
+    }
+    return newBadges;
+}
+
+function enqueueBadge(id) {
+    badgeQueue.push(id);
+    if (badgeQueue.length === 1) displayNextBadge();
+}
+
+function displayNextBadge() {
+    if (!badgeQueue.length) return;
+    const badge = badgeList.find(b => b.id === badgeQueue[0]);
+    if (!badge) { badgeQueue.shift(); displayNextBadge(); return; }
+
+    document.getElementById('badge-overlay-icon').innerText = badge.icon;
+    document.getElementById('badge-overlay-name').innerText = badge.name;
+    document.getElementById('badge-overlay-desc').innerText = badge.desc;
+
+    // Reset animation
+    const icon = document.getElementById('badge-overlay-icon');
+    icon.style.animation = 'none';
+    void icon.offsetWidth;
+    icon.style.animation = 'badgePop 0.65s cubic-bezier(0.175,0.885,0.32,1.275) forwards';
+
+    document.getElementById('badge-overlay').classList.add('active');
+    playSound('badge');
+    speak('Nieuwe badge! ' + badge.name);
+}
+
+function closeBadgeOverlay() {
+    document.getElementById('badge-overlay').classList.remove('active');
+    badgeQueue.shift();
+    if (badgeQueue.length > 0) {
+        setTimeout(displayNextBadge, 350);
+    }
+}
+
+// ============================================================
+// VISUELE EFFECTEN
+// ============================================================
+function showFloat(txt) {
+    const el = document.createElement('div');
+    el.className = 'float-txt';
+    el.innerText = txt;
+    el.style.left = (20 + Math.random()*60) + '%';
+    el.style.top  = '50%';
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 1500);
+}
+
+function showLevelUp(muscle, lvl) {
+    document.getElementById('lvl-msg').innerText = `${muscle} is nu Level ${lvl}!`;
+    document.getElementById('lvl-overlay').classList.add('active');
+    playSound('lvl');
+    speak("Level up! " + muscle);
+    setTimeout(() => document.getElementById('lvl-overlay').classList.remove('active'), 2500);
+}
+function closeLvl() { document.getElementById('lvl-overlay').classList.remove('active'); }
+
+// ============================================================
+// ANALYSE RAPPORT
+// ============================================================
+function showAnalysisReport() {
+    const score = user.lastAnalysisScore || 0;
+    const overlay = document.getElementById('report-overlay');
+    overlay.style.display = 'flex';
+    document.getElementById('report-score').innerText   = score + "%";
+    document.getElementById('precision-val').innerText  = score + "%";
+    document.getElementById('precision-bar').style.width = score + "%";
+    let fb = score >= 85 ? "Perfecte houding! Zeer gecontroleerd." :
+             score >= 60 ? "Goed gedaan! Probeer de bewegingen vollediger af te maken." :
+             score === 0 ? "Nog geen data. Doe eerst een workout!" :
+             "Focus op je techniek. Ga iets langzamer.";
+    document.getElementById('report-feedback-text').innerText = fb;
+}
+function closeReport() {
+    document.getElementById('report-overlay').style.display = 'none';
+    tab('dash');
+}
+
+// ============================================================
+// AI / MEDIAPIPE — DETECTIE
+// ============================================================
+const videoElement  = document.getElementById('input_video');
+const canvasElement = document.getElementById('output_canvas');
+const canvasCtx     = canvasElement.getContext('2d');
+
+function onResults(results) {
+    if (!results.poseLandmarks || isRest) return;
+
+    canvasCtx.save();
+    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+    canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+    const m   = results.poseLandmarks;
+    const exe = circuit[cIdx] ? circuit[cIdx].n.toLowerCase() : '';
+
+    const hip      = { L: m[23], R: m[24] };
+    const knee     = { L: m[25], R: m[26] };
+    const ankle    = { L: m[27], R: m[28] };
+    const shoulder = { L: m[11], R: m[12] };
+    const elbow    = { L: m[13], R: m[14] };
+    const wrist    = { L: m[15], R: m[16] };
+
+    let quality = 50;
+
+    if (exe.includes('squat')) {
+        const angle = calcAngle(hip.R, knee.R, ankle.R);
+        quality = stage === 'up' ? Math.max(0, 100 - Math.abs(90 - angle)) : quality;
+        if (angle > 160) { stage = 'up'; quality = 20; }
+        if (angle < 100 && stage === 'up') {
+            sessionScores.push(Math.max(0, 100 - Math.abs(90 - angle)));
+            stage = 'down'; registerRep();
+        }
+    }
+    else if (exe.includes('push')) {
+        const angle = calcAngle(shoulder.R, elbow.R, wrist.R);
+        quality = stage === 'up' ? Math.max(0, 100 - Math.abs(90 - angle)) : 80;
+        if (angle > 155) { stage = 'up'; }
+        if (angle < 90 && stage === 'up') {
+            sessionScores.push(Math.max(0, 100 - Math.abs(90 - angle)));
+            stage = 'down'; registerRep();
+        }
+    }
+    else if (exe.includes('lunge')) {
+        const angle = calcAngle(hip.R, knee.R, ankle.R);
+        quality = Math.max(0, 100 - Math.abs(90 - angle));
+        if (angle > 155) { stage = 'up'; }
+        if (angle < 100 && stage === 'up') { sessionScores.push(quality); stage = 'down'; registerRep(); }
+    }
+    else if (exe.includes('calf')) {
+        const angle = calcAngle(knee.R, ankle.R, m[32]);
+        quality = angle > 100 ? Math.min(100, angle - 90) : 20;
+        if (angle > 120 && stage === 'up') { sessionScores.push(quality); registerRep(); stage = 'down'; }
+        if (angle < 100) { stage = 'up'; }
+    }
+    else if (exe.includes('high knees') || exe.includes('high knee')) {
+        const kneeH = 1 - knee.L.y;
+        const hipH  = 1 - ((hip.L.y + hip.R.y) / 2);
+        quality = Math.min(100, Math.max(0, (kneeH - hipH) * 400));
+        if (kneeH > hipH + 0.1 && stage === 'up') { sessionScores.push(quality); stage = 'down'; registerRep(); }
+        if (kneeH < hipH - 0.05) { stage = 'up'; }
+    }
+    else if (exe.includes('plank') && !exe.includes('mountain')) {
+        const hipAngle = calcAngle(shoulder.R, hip.R, knee.R);
+        quality = Math.max(0, 100 - Math.abs(175 - hipAngle));
+        if (!window._plankTimer) {
+            window._plankTimer = setInterval(() => {
+                if (!isRest && circuit[cIdx] && circuit[cIdx].n.toLowerCase().includes('plank') && quality > 50) {
+                    sessionScores.push(quality); registerRep();
+                }
+            }, 3000);
+        }
+    }
+    else if (exe.includes('shoulder tap')) {
+        const hipAngle = calcAngle(shoulder.R, hip.R, ankle.R);
+        quality = Math.max(0, 100 - Math.abs(175 - hipAngle));
+        const tapDist = Math.abs(wrist.L.x - shoulder.L.x) + Math.abs(wrist.L.y - shoulder.L.y);
+        if (tapDist < 0.1 && stage === 'up') { sessionScores.push(quality); stage = 'down'; registerRep(); }
+        if (tapDist > 0.2) { stage = 'up'; }
+    }
+    else if (exe.includes('superman')) {
+        const armH = 1 - ((wrist.L.y + wrist.R.y) / 2);
+        const hipH = 1 - ((hip.L.y + hip.R.y) / 2);
+        quality = Math.min(100, Math.max(0, (armH - hipH) * 300 + 50));
+        if (armH > hipH + 0.05 && stage === 'up') { sessionScores.push(quality); stage = 'down'; registerRep(); }
+        if (armH < hipH - 0.02) { stage = 'up'; }
+    }
+    else if (exe.includes('jumping')) {
+        const armSpread = Math.abs(wrist.L.x - wrist.R.x);
+        quality = Math.min(100, armSpread * 200);
+        if (armSpread > 0.6 && stage === 'up') { sessionScores.push(quality); stage = 'down'; registerRep(); }
+        if (armSpread < 0.2) { stage = 'up'; }
+    }
+    else if (exe.includes('burpee')) {
+        const hipH = 1 - ((hip.L.y + hip.R.y) / 2);
+        quality = hipH > 0.5 ? 100 : Math.min(100, hipH * 200);
+        if (hipH > 0.55 && stage === 'up') { sessionScores.push(quality); stage = 'down'; registerRep(); }
+        if (hipH < 0.3) { stage = 'up'; }
+    }
+    else if (exe.includes('mountain')) {
+        const ktc = Math.abs(knee.L.y - shoulder.L.y);
+        quality = Math.max(0, Math.min(100, 100 - ktc * 200));
+        if (ktc < 0.2 && stage === 'up') { sessionScores.push(quality); stage = 'down'; registerRep(); }
+        if (ktc > 0.35) { stage = 'up'; }
+    }
+    else if (exe.includes('skater')) {
+        const lat = Math.abs(ankle.L.x - ankle.R.x);
+        quality = Math.min(100, lat * 200);
+        if (lat > 0.45 && stage === 'up') { sessionScores.push(quality); stage = 'down'; registerRep(); }
+        if (lat < 0.15) { stage = 'up'; }
+    }
+    else if (exe.includes('crunch')) {
+        const dist = Math.abs(shoulder.R.y - knee.R.y);
+        quality = Math.max(0, Math.min(100, 100 - dist * 200));
+        if (dist < 0.25 && stage === 'up') { sessionScores.push(quality); stage = 'down'; registerRep(); }
+        if (dist > 0.4) { stage = 'up'; }
+    }
+    else {
+        quality = 60;
+        if (!window._fallbackTimer) {
+            window._fallbackTimer = setInterval(() => {
+                if (!isRest && quality > 40) { sessionScores.push(quality); registerRep(); }
+            }, 2500);
+        }
+    }
+
+    if (!exe.includes('plank') && window._plankTimer) { clearInterval(window._plankTimer); window._plankTimer = null; }
+    if (exe !== window._lastExe && window._fallbackTimer) { clearInterval(window._fallbackTimer); window._fallbackTimer = null; }
+    window._lastExe = exe;
+
+    const r = quality < 50 ? 255 : Math.round(255 - (quality - 50) * 5.1);
+    const g = quality < 50 ? Math.round(quality * 5.1) : 255;
+    const lineColor = `rgb(${r},${g},0)`;
+
+    const connections = [
+        [11,12],[11,13],[13,15],[12,14],[14,16],
+        [11,23],[12,24],[23,24],
+        [23,25],[25,27],[24,26],[26,28],
+        [27,29],[29,31],[28,30],[30,32]
+    ];
+
+    canvasCtx.lineWidth = 3; canvasCtx.lineCap = 'round';
+    canvasCtx.strokeStyle = lineColor; canvasCtx.shadowColor = lineColor; canvasCtx.shadowBlur = 8;
+
+    connections.forEach(([a, b]) => {
+        const pA = m[a], pB = m[b];
+        if (!pA || !pB || pA.visibility < 0.5 || pB.visibility < 0.5) return;
+        canvasCtx.beginPath();
+        canvasCtx.moveTo(pA.x * canvasElement.width, pA.y * canvasElement.height);
+        canvasCtx.lineTo(pB.x * canvasElement.width, pB.y * canvasElement.height);
+        canvasCtx.stroke();
+    });
+
+    canvasCtx.fillStyle = `rgba(${r},${g},0,0.9)`;
+    canvasCtx.shadowBlur = 12;
+    m.forEach((point, i) => {
+        if (i < 11 || !point || point.visibility < 0.5) return;
+        canvasCtx.beginPath();
+        canvasCtx.arc(point.x * canvasElement.width, point.y * canvasElement.height, 5, 0, 2 * Math.PI);
+        canvasCtx.fill();
+    });
+    canvasCtx.shadowBlur = 0;
+    canvasCtx.restore();
+}
+
+function calcAngle(a, b, c) {
+    const r = Math.atan2(c.y-b.y, c.x-b.x) - Math.atan2(a.y-b.y, a.x-b.x);
+    let ang = Math.abs(r * 180 / Math.PI);
+    return ang > 180 ? 360 - ang : ang;
+}
+
+function startAI() {
+    try {
+        const pose = new Pose({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}` });
+        pose.setOptions({ modelComplexity:1, minDetectionConfidence:0.5, minTrackingConfidence:0.5 });
+        pose.onResults(onResults);
+        camera = new Camera(videoElement, {
+            onFrame: async () => {
+                canvasElement.width  = videoElement.videoWidth  || 640;
+                canvasElement.height = videoElement.videoHeight || 480;
+                await pose.send({ image: videoElement });
+            }
+        });
+        camera.start();
+    } catch(e) { console.error("AI fout:", e); }
+}
+
+// ============================================================
+// SWIPE NAVIGATIE
+// ============================================================
+let touchStartX = 0;
+const tabOrder = ['dash','analyse','progress','social','profile'];
+document.addEventListener('touchstart', e => { touchStartX = e.changedTouches[0].screenX; }, {passive:true});
+document.addEventListener('touchend', e => {
+    const delta = e.changedTouches[0].screenX - touchStartX;
+    if (Math.abs(delta) < 60) return;
+    const active = tabOrder.findIndex(t => {
+        const el = document.getElementById('scr-'+t);
+        return el && !el.classList.contains('hidden');
+    });
+    if (active === -1) return;
+    const next = delta < 0 ? active+1 : active-1;
+    if (next >= 0 && next < tabOrder.length) {
+        const t = tabOrder[next];
+        const el = document.querySelector(`.nav-item[onclick*="tab('${t}'"]`);
+        tab(t, el);
+    }
+}, {passive:true});
+
+// ============================================================
+// START APP
+// ============================================================
+window.addEventListener('load', () => {
+    loadTheme();
+    auth.onAuthStateChanged(async (fbUser) => {
+        if (fbUser) {
+            try {
+                const doc = await db.collection('users').doc(fbUser.uid).get();
+                if (doc.exists) {
+                    user = doc.data();
+                    if (!user.stats)         user.stats         = JSON.parse(JSON.stringify(DEFAULT_USER.stats));
+                    if (!user.badges)        user.badges        = [];
+                    if (!user.history)       user.history       = [];
+                    if (!user.friends)       user.friends       = [];
+                    if (!user.weightHistory) user.weightHistory = [];
+                    save();
+                    showApp();
+                } else {
+                    currentStep = 0;
+                    document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+                    document.getElementById('scr-onboarding').classList.remove('hidden');
+                    renderQ();
+                }
+            } catch(e) {
+                console.error('Firebase fout:', e);
+                const hasLocal = load();
+                if (hasLocal && user.name) showApp();
+                else {
+                    currentStep = 0;
+                    document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+                    document.getElementById('scr-onboarding').classList.remove('hidden');
+                    renderQ();
+                }
+            }
+        } else {
+            const hasLocal = load();
+            if (hasLocal && user.name) {
+                showApp();
+            } else {
+                document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+                document.getElementById('scr-auth').classList.remove('hidden');
+            }
+        }
+    });
+});
+</script>
+</body>
+</html>                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              
 
